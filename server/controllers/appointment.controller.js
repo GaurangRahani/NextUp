@@ -11,6 +11,7 @@ const {
   minutesToTime,
   getDayOfWeek,
 } = require('../utils/hoursValidator');
+const { findConflictingAppointment } = require('../utils/conflictChecker');
 
 /**
  * Helper to resolve business ID for current request
@@ -141,8 +142,30 @@ const bookAppointment = async (req, res) => {
       );
     }
 
-    // Find least-loaded staff member for this day
-    const candidateUserIds = candidates.map((c) => c.userId);
+    // Filter out candidates with overlapping appointments (Rule R1)
+    const availableCandidates = [];
+    for (const c of candidates) {
+      const conflict = await findConflictingAppointment({
+        AppointmentModel: Appointment,
+        staffId: c.userId,
+        date: appointmentDate,
+        startTime,
+        endTime,
+      });
+      if (!conflict) {
+        availableCandidates.push(c);
+      }
+    }
+
+    if (availableCandidates.length === 0) {
+      throw new ApiError(
+        409,
+        'Rule R1: No qualified staff members are available at this time slot'
+      );
+    }
+
+    // Find least-loaded staff member among available candidates for this day (Decision D5)
+    const candidateUserIds = availableCandidates.map((c) => c.userId);
 
     // Count existing scheduled appointments on this date
     const startOfDay = new Date(appointmentDate);
@@ -169,14 +192,14 @@ const bookAppointment = async (req, res) => {
     const countMap = new Map();
     counts.forEach((item) => countMap.set(item._id.toString(), item.count));
 
-    // Sort candidates by lowest booking count
-    candidates.sort((a, b) => {
+    // Sort available candidates by lowest booking count
+    availableCandidates.sort((a, b) => {
       const countA = countMap.get(a.userId.toString()) || 0;
       const countB = countMap.get(b.userId.toString()) || 0;
       return countA - countB;
     });
 
-    assignedStaffUserId = candidates[0].userId;
+    assignedStaffUserId = availableCandidates[0].userId;
   } else {
     // Specific staff member chosen: verify staff profile & Rule R2 assignment check
     const staffProfile = await StaffProfile.findOne({
@@ -203,6 +226,22 @@ const bookAppointment = async (req, res) => {
       );
     }
 
+    // Rule R1: Check for overlapping appointments for this staff member
+    const conflict = await findConflictingAppointment({
+      AppointmentModel: Appointment,
+      staffId: staffProfile.userId,
+      date: appointmentDate,
+      startTime,
+      endTime,
+    });
+
+    if (conflict) {
+      throw new ApiError(
+        409,
+        'Rule R1: An overlapping appointment already exists for this staff member'
+      );
+    }
+
     assignedStaffUserId = staffProfile.userId;
   }
 
@@ -212,18 +251,29 @@ const bookAppointment = async (req, res) => {
     targetCustomerId = customerId;
   }
 
-  // 9. Create Appointment
-  const appointment = await Appointment.create({
-    customerId: targetCustomerId,
-    staffId: assignedStaffUserId,
-    serviceId: service._id,
-    businessId: business._id,
-    date: appointmentDate,
-    startTime,
-    endTime,
-    status: 'scheduled',
-    notes: notes || '',
-  });
+  // 9. Create Appointment with DB safeguard for concurrency (Decision D3)
+  let appointment;
+  try {
+    appointment = await Appointment.create({
+      customerId: targetCustomerId,
+      staffId: assignedStaffUserId,
+      serviceId: service._id,
+      businessId: business._id,
+      date: appointmentDate,
+      startTime,
+      endTime,
+      status: 'scheduled',
+      notes: notes || '',
+    });
+  } catch (err) {
+    if (err.code === 11000) {
+      throw new ApiError(
+        409,
+        'Rule R1: An overlapping appointment already exists for this staff member'
+      );
+    }
+    throw err;
+  }
 
   const populated = await Appointment.findById(appointment._id).populate([
     { path: 'customerId', select: 'name email phone' },

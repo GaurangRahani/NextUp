@@ -10,6 +10,7 @@ import { getCurrentBusiness } from '../api/businessApi';
 import { getServices } from '../api/serviceApi';
 import { getStaff } from '../api/staffApi';
 import { bookAppointment } from '../api/appointmentApi';
+import { getAvailability } from '../api/availabilityApi';
 
 const timeToMinutes = (timeStr) => {
   if (!timeStr) return 0;
@@ -43,6 +44,10 @@ const BookAppointmentPage = () => {
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
   const [notes, setNotes] = useState('');
+
+  // Real-time slot availability state (Module 6: Rule R1)
+  const [apiSlots, setApiSlots] = useState([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
 
   // Submission state
   const [submitting, setSubmitting] = useState(false);
@@ -148,6 +153,40 @@ const BookAppointmentPage = () => {
     return minutesToTime(startMin + selectedService.duration);
   }, [selectedTime, selectedService]);
 
+  // Fetch real-time availability from API (Rule R1)
+  const fetchAvailability = useCallback(async () => {
+    if (!selectedDate || !business?._id || !selectedService?._id) return;
+    try {
+      setLoadingSlots(true);
+      const staffParam =
+        selectedStaff === 'any'
+          ? 'any'
+          : selectedStaff?.userId?._id || selectedStaff?._id;
+
+      const res = await getAvailability({
+        businessId: business._id,
+        serviceId: selectedService._id,
+        date: selectedDate,
+        staffId: staffParam,
+        stepMinutes: 30,
+      });
+
+      if (res.success && res.data) {
+        setApiSlots(res.data.slots || []);
+      }
+    } catch (err) {
+      // Fallback
+    } finally {
+      setLoadingSlots(false);
+    }
+  }, [selectedDate, business, selectedService, selectedStaff]);
+
+  useEffect(() => {
+    if (step === 3 && selectedDate) {
+      fetchAvailability();
+    }
+  }, [step, selectedDate, fetchAvailability]);
+
   // Handle final booking submission
   const handleBook = async () => {
     if (!business || !selectedService || !selectedDate || !selectedTime) {
@@ -171,8 +210,15 @@ const BookAppointmentPage = () => {
       setStep(5); // Success state
       toast.success(res.message || 'Appointment booked successfully!');
     } catch (err) {
-      const msg = err.response?.data?.message || 'Failed to book appointment';
-      toast.error(msg);
+      if (err.response?.status === 409) {
+        toast.error('Slot was just taken! Please select another time slot.');
+        setStep(3);
+        setSelectedTime('');
+        fetchAvailability();
+      } else {
+        const msg = err.response?.data?.message || 'Failed to book appointment';
+        toast.error(msg);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -482,15 +528,42 @@ const BookAppointmentPage = () => {
               {/* Time Slots Grid */}
               {selectedDate && !dayOperatingHours?.isClosed && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Available Slots ({selectedService?.duration} mins) *
-                  </label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Available Slots ({selectedService?.duration} mins) *
+                    </label>
+                    {loadingSlots && (
+                      <span className="text-xs text-primary-600 flex items-center gap-1">
+                        <Spinner size="sm" /> Checking slot availability...
+                      </span>
+                    )}
+                  </div>
 
-                  {availableSlots.length === 0 ? (
-                    <p className="text-xs text-gray-400 italic">
-                      No slots available for this day.
-                    </p>
-                  ) : (
+                  {apiSlots.length > 0 ? (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-56 overflow-y-auto p-1">
+                      {apiSlots.map((slot) => {
+                        const isSelected = selectedTime === slot.startTime;
+                        return (
+                          <button
+                            key={slot.startTime}
+                            type="button"
+                            disabled={!slot.isAvailable}
+                            onClick={() => slot.isAvailable && setSelectedTime(slot.startTime)}
+                            title={!slot.isAvailable ? `Unavailable (${slot.reason || 'Booked'})` : 'Available'}
+                            className={`py-2 px-3 text-xs font-semibold rounded-lg border transition-all text-center ${
+                              isSelected
+                                ? 'bg-primary-600 text-white border-primary-600 shadow'
+                                : slot.isAvailable
+                                ? 'bg-white text-gray-800 border-gray-200 hover:border-primary-400 cursor-pointer'
+                                : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed line-through opacity-60'
+                            }`}
+                          >
+                            {slot.startTime}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : availableSlots.length > 0 ? (
                     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-56 overflow-y-auto p-1">
                       {availableSlots.map((slot) => (
                         <button
@@ -507,6 +580,10 @@ const BookAppointmentPage = () => {
                         </button>
                       ))}
                     </div>
+                  ) : (
+                    <p className="text-xs text-gray-400 italic">
+                      No slots available for this day.
+                    </p>
                   )}
                 </div>
               )}

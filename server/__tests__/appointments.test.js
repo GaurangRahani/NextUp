@@ -114,6 +114,7 @@ describe('Module 5: Appointment Booking (Rule R2)', () => {
       jest.spyOn(Business, 'findById').mockResolvedValue(mockBusiness);
       jest.spyOn(Service, 'findById').mockResolvedValue(mockService);
       jest.spyOn(StaffProfile, 'findOne').mockResolvedValue(mockStaffProfile1);
+      jest.spyOn(Appointment, 'find').mockResolvedValue([]);
 
       jest.spyOn(Appointment, 'create').mockResolvedValue({
         _id: appointmentId,
@@ -156,6 +157,7 @@ describe('Module 5: Appointment Booking (Rule R2)', () => {
       jest.spyOn(Business, 'findById').mockResolvedValue(mockBusiness);
       jest.spyOn(Service, 'findById').mockResolvedValue(mockService);
       jest.spyOn(StaffProfile, 'find').mockResolvedValue([mockStaffProfile1, mockStaffProfile2]);
+      jest.spyOn(Appointment, 'find').mockResolvedValue([]);
 
       // Staff 1 has 2 bookings, Staff 2 has 0 bookings
       jest.spyOn(Appointment, 'aggregate').mockResolvedValue([

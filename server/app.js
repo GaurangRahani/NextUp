@@ -11,6 +11,7 @@ const businessRoute = require('./routes/business.route');
 const serviceRoute = require('./routes/service.route');
 const staffRoute = require('./routes/staff.route');
 const appointmentRoute = require('./routes/appointment.route');
+const availabilityRoute = require('./routes/availability.route');
 
 const app = express();
 
@@ -36,6 +37,7 @@ app.use('/api/v1/business', businessRoute);
 app.use('/api/v1/services', serviceRoute);
 app.use('/api/v1/staff', staffRoute);
 app.use('/api/v1/appointments', appointmentRoute);
+app.use('/api/v1/availability', availabilityRoute);
 
 // 404
 app.use(notFound);

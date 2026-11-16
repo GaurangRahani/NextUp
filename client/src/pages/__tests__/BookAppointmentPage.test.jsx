@@ -6,12 +6,14 @@ import * as businessApi from '../../api/businessApi';
 import * as serviceApi from '../../api/serviceApi';
 import * as staffApi from '../../api/staffApi';
 import * as appointmentApi from '../../api/appointmentApi';
+import * as availabilityApi from '../../api/availabilityApi';
 import { AuthContext } from '../../context/AuthContext';
 
 vi.mock('../../api/businessApi');
 vi.mock('../../api/serviceApi');
 vi.mock('../../api/staffApi');
 vi.mock('../../api/appointmentApi');
+vi.mock('../../api/availabilityApi');
 
 const renderWithAuth = () => {
   const mockAuth = {
@@ -86,6 +88,16 @@ describe('BookAppointmentPage', () => {
       success: true,
       data: mockStaff,
     });
+    availabilityApi.getAvailability.mockResolvedValue({
+      success: true,
+      data: {
+        slots: [
+          { startTime: '09:00', endTime: '09:45', isAvailable: true },
+          { startTime: '09:30', endTime: '10:15', isAvailable: false, reason: 'Conflict' },
+          { startTime: '10:00', endTime: '10:45', isAvailable: true },
+        ],
+      },
+    });
   });
 
   it('renders Step 1 with active services list', async () => {
@@ -157,5 +169,27 @@ describe('BookAppointmentPage', () => {
     expect(await screen.findByText('Appointment Confirmed!')).toBeInTheDocument();
     expect(screen.getByText(/10:00/)).toBeInTheDocument();
     expect(screen.getByText(/10:45/)).toBeInTheDocument();
+  });
+
+  it('R1: disables conflicting slots in slot grid based on real-time availability', async () => {
+    renderWithAuth();
+
+    // Select service and staff
+    const haircutCard = await screen.findByText('Haircut & Styling');
+    fireEvent.click(haircutCard);
+    const anyStaffCard = await screen.findByText('Any Available Staff');
+    fireEvent.click(anyStaffCard);
+
+    // Pick date
+    const dateInput = await screen.findByLabelText(/Select Appointment Date \*/i);
+    fireEvent.change(dateInput, { target: { value: '2026-11-20' } });
+
+    // Available slot 09:00 should not be disabled
+    const slot0900 = await screen.findByRole('button', { name: '09:00' });
+    expect(slot0900).not.toBeDisabled();
+
+    // Conflicting slot 09:30 should be disabled
+    const slot0930 = await screen.findByRole('button', { name: '09:30' });
+    expect(slot0930).toBeDisabled();
   });
 });

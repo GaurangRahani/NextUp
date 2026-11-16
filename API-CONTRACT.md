@@ -757,7 +757,79 @@ No auth required.
 
 ---
 
-## M6 — Availability _(TBD)_
+## M6 — Availability & Conflict Prevention (Rule R1)
+
+### 1. Get Real-Time Slot Availability
+`GET /api/v1/availability?businessId=...&serviceId=...&date=...&staffId=...`
+- **Auth required:** Optional (public/customer can check availability before booking)
+- **Query Parameters:**
+  - `businessId` (required)
+  - `serviceId` (required — determines slot duration)
+  - `date` (required — `YYYY-MM-DD`)
+  - `staffId` (optional — specific staff member User ID, or `"any"` / omitted to check all qualified staff)
+- **Business Rule R1 Logic:**
+  - Evaluates business operating hours for the given date.
+  - Generates discrete time slots from opening to closing minus service duration (at 15-minute or 30-minute granularity).
+  - Filters out past slots if the date is today.
+  - Queries active appointments on that date (`status != 'cancelled'`).
+  - Evaluates overlap condition for each slot: `slotStart < apptEnd AND slotEnd > apptStart`.
+  - Back-to-back slots (`slotStart == apptEnd` or `slotEnd == apptStart`) are valid and non-overlapping.
+- **Response 200 (OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "date": "2026-11-20",
+    "dayOfWeek": "Friday",
+    "operatingHours": {
+      "open": "09:00",
+      "close": "18:00",
+      "isClosed": false
+    },
+    "service": {
+      "_id": "6738d2...",
+      "name": "Haircut & Styling",
+      "duration": 45
+    },
+    "staffId": "6738a1...",
+    "slots": [
+      {
+        "startTime": "09:00",
+        "endTime": "09:45",
+        "isAvailable": true,
+        "availableStaff": ["6738a1...", "6738a2..."]
+      },
+      {
+        "startTime": "09:30",
+        "endTime": "10:15",
+        "isAvailable": false,
+        "reason": "Conflict"
+      }
+    ]
+  },
+  "message": "Availability calculated successfully"
+}
+```
+- **Error Responses:**
+  - `400 Bad Request`: Missing query parameters, invalid date or time format.
+  - `404 Not Found`: Business or Service not found.
+
+---
+
+### 2. Overlap Safeguard on Booking (Rule R1)
+Integrated into `POST /api/v1/appointments`:
+- Before creating a booking, checks if an overlapping active appointment exists for that staff member (`newStart < existingEnd AND newEnd > existingStart`).
+- If an overlap is detected, returns `409 Conflict`:
+```json
+{
+  "success": false,
+  "data": null,
+  "message": "Rule R1: An overlapping appointment already exists for this staff member"
+}
+```
+
+---
+
 ## M7 — Appointment Management _(TBD)_
 ## M8 — Walk-in Tokens _(TBD)_
 ## M9 — Queue Dashboard _(TBD)_
