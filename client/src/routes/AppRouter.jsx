@@ -10,6 +10,8 @@ import Home from '../pages/Home';
 import LoginPage from '../pages/LoginPage';
 import RegisterPage from '../pages/RegisterPage';
 import Dashboard from '../pages/Dashboard';
+import BusinessProfilePage from '../pages/BusinessProfilePage';
+import ServicesPage from '../pages/ServicesPage';
 import NotFound from '../pages/NotFound';
 import Forbidden from '../pages/Forbidden';
 
@@ -29,6 +31,22 @@ const AppRouter = () => (
               element={
                 <ProtectedRoute>
                   <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/business/profile"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <BusinessProfilePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/services"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <ServicesPage />
                 </ProtectedRoute>
               }
             />

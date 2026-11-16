@@ -7,6 +7,8 @@ const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
 const healthRoute = require('./routes/health.route');
 const authRoute = require('./routes/auth.route');
+const businessRoute = require('./routes/business.route');
+const serviceRoute = require('./routes/service.route');
 
 const app = express();
 
@@ -28,6 +30,8 @@ app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 // Routes
 app.use('/api/v1/health', healthRoute);
 app.use('/api/v1/auth', authRoute);
+app.use('/api/v1/business', businessRoute);
+app.use('/api/v1/services', serviceRoute);
 
 // 404
 app.use(notFound);

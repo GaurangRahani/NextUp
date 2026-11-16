@@ -31,12 +31,30 @@ const Navbar = () => {
           </Link>
 
           {isAuthenticated && (
-            <Link
-              to="/dashboard"
-              className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors"
-            >
-              Dashboard
-            </Link>
+            <>
+              <Link
+                to="/dashboard"
+                className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors"
+              >
+                Dashboard
+              </Link>
+              {user?.role === 'admin' && (
+                <>
+                  <Link
+                    to="/business/profile"
+                    className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors"
+                  >
+                    Business Profile
+                  </Link>
+                  <Link
+                    to="/services"
+                    className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors"
+                  >
+                    Services
+                  </Link>
+                </>
+              )}
+            </>
           )}
         </div>
 
