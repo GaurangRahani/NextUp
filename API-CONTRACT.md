@@ -455,8 +455,308 @@ No auth required.
 
 ---
 
-## M4 — Staff _(TBD)_
-## M5 — Appointments _(TBD)_
+## M4 — Staff Management & Service Assignment
+
+### 1. Create Staff Member
+`POST /api/v1/staff`
+- **Auth required:** Yes (`Bearer <token>`, role: `admin`)
+- **Request Body:**
+```json
+{
+  "name": "Alex Taylor",
+  "email": "alex@example.com",
+  "password": "password123",
+  "serviceIds": ["6738d2...", "6738d3..."],
+  "businessId": "6738c1..."
+}
+```
+*Note: Alternatively, an existing `userId` can be provided instead of name/email/password.*
+- **Validation Rules:**
+  - `email`: valid email format, must not already exist
+  - `name`: required string (2-50 chars)
+  - `password`: min 6 chars (when creating new user)
+  - `serviceIds`: optional array of Service ObjectIds. **All assigned services must belong to the staff's business** (cross-business assignment rejected with 400).
+- **Response 201 (Created):**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "6738e1...",
+    "userId": {
+      "_id": "6738a1...",
+      "name": "Alex Taylor",
+      "email": "alex@example.com",
+      "role": "staff"
+    },
+    "businessId": "6738c1...",
+    "serviceIds": [
+      {
+        "_id": "6738d2...",
+        "name": "Haircut & Styling",
+        "duration": 45,
+        "price": 500
+      }
+    ],
+    "isActive": true
+  },
+  "message": "Staff member created successfully"
+}
+```
+- **Error Responses:**
+  - `400 Bad Request`: Missing fields, or one or more services do not belong to this business
+  - `403 Forbidden`: User is not an admin of this business
+  - `409 Conflict`: User email already exists
+
+---
+
+### 2. List Staff Members
+`GET /api/v1/staff?businessId=...&serviceId=...&includeInactive=false`
+- **Auth required:** Optional (public/customer can see active staff for a business; admin can view all including inactive with `includeInactive=true`)
+- **Query Parameters:**
+  - `businessId` (required if unauthenticated or admin with multiple businesses)
+  - `serviceId` (optional, filter staff offering this service)
+  - `includeInactive` (optional boolean, admin only)
+- **Response 200 (OK):**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "6738e1...",
+      "userId": {
+        "_id": "6738a1...",
+        "name": "Alex Taylor",
+        "email": "alex@example.com",
+        "role": "staff"
+      },
+      "businessId": "6738c1...",
+      "serviceIds": [
+        {
+          "_id": "6738d2...",
+          "name": "Haircut & Styling",
+          "duration": 45,
+          "price": 500
+        }
+      ],
+      "isActive": true
+    }
+  ],
+  "message": "Staff members fetched successfully"
+}
+```
+
+---
+
+### 3. Get Staff Member by ID
+`GET /api/v1/staff/:id`
+- **Auth required:** Optional
+- **Response 200 (OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "6738e1...",
+    "userId": {
+      "_id": "6738a1...",
+      "name": "Alex Taylor",
+      "email": "alex@example.com"
+    },
+    "businessId": "6738c1...",
+    "serviceIds": [...],
+    "isActive": true
+  },
+  "message": "Staff profile fetched successfully"
+}
+```
+- **Error Responses:**
+  - `404 Not Found`: Staff profile not found
+
+---
+
+### 4. Update Staff Member
+`PUT /api/v1/staff/:id`
+- **Auth required:** Yes (`Bearer <token>`, role: `admin` or the staff member themselves)
+- **Request Body:** Partial update (`name`, `serviceIds`, `isActive`)
+- **Response 200 (OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "6738e1...",
+    "userId": {
+      "_id": "6738a1...",
+      "name": "Alex Taylor Updated",
+      "email": "alex@example.com"
+    },
+    "serviceIds": [...],
+    "isActive": true
+  },
+  "message": "Staff profile updated successfully"
+}
+```
+- **Error Responses:**
+  - `400 Bad Request`: Cross-business service assignment attempt
+  - `403 Forbidden`: Unauthorized user
+  - `404 Not Found`: Staff member not found
+
+---
+
+### 5. Assign Services to Staff
+`PUT /api/v1/staff/:id/services`
+- **Auth required:** Yes (`Bearer <token>`, role: `admin`)
+- **Request Body:**
+```json
+{
+  "serviceIds": ["6738d2...", "6738d3..."]
+}
+```
+- **Validation:**
+  - `serviceIds`: array of valid Service IDs belonging to the same business
+- **Response 200 (OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "6738e1...",
+    "serviceIds": [...]
+  },
+  "message": "Services assigned to staff successfully"
+}
+```
+- **Error Responses:**
+  - `400 Bad Request`: One or more services do not belong to this business
+  - `404 Not Found`: Staff profile not found
+
+---
+
+### 6. Deactivate Staff Member
+`DELETE /api/v1/staff/:id`
+- **Auth required:** Yes (`Bearer <token>`, role: `admin`)
+- **Response 200 (OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "6738e1...",
+    "isActive": false,
+    "isDeactivated": true
+  },
+  "message": "Staff member deactivated successfully"
+}
+```
+- **Error Responses:**
+  - `403 Forbidden`: Unauthorized
+  - `404 Not Found`: Staff member not found
+
+---
+
+## M5 — Appointment Booking (Rule R2)
+
+### 1. Book an Appointment
+`POST /api/v1/appointments`
+- **Auth required:** Yes (`Bearer <token>`, customer, staff, or admin)
+- **Request Body:**
+```json
+{
+  "businessId": "6738c1...",
+  "serviceId": "6738d2...",
+  "staffId": "6738a1...",
+  "date": "2026-11-20",
+  "startTime": "10:30",
+  "notes": "First time visit"
+}
+```
+*Note: `staffId` can be a specific staff member's User ID, or `"any"` / omitted to automatically pick the least-loaded qualified staff member (Decision D5).*
+- **Business Rule R2 Checks:**
+  1. **Not in the past:** The combined appointment date and start time must be in the future.
+  2. **Within operating hours:** The day must not be closed, `startTime >= open`, and `endTime <= close`.
+  3. **Staff assignment:** The selected staff member must have an active `StaffProfile` assigned to the selected `serviceId`.
+- **Response 201 (Created):**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "6738f1...",
+    "customerId": {
+      "_id": "6738a2...",
+      "name": "Deep Boghara",
+      "email": "customer@example.com"
+    },
+    "staffId": {
+      "_id": "6738a1...",
+      "name": "Rahul Sharma",
+      "email": "rahul@example.com"
+    },
+    "serviceId": {
+      "_id": "6738d2...",
+      "name": "Haircut & Styling",
+      "duration": 45,
+      "price": 500
+    },
+    "businessId": {
+      "_id": "6738c1...",
+      "name": "Apex Salon & Spa"
+    },
+    "date": "2026-11-20T00:00:00.000Z",
+    "startTime": "10:30",
+    "endTime": "11:15",
+    "status": "scheduled",
+    "notes": "First time visit",
+    "createdAt": "2026-11-16T19:30:00.000Z"
+  },
+  "message": "Appointment booked successfully"
+}
+```
+- **Error Responses:**
+  - `400 Bad Request`: Missing fields, service inactive/nonexistent, staff not assigned to service (Rule R2), appointment outside business hours (Rule R2), appointment in the past (Rule R2).
+  - `401 Unauthorized`: Missing or invalid token.
+
+---
+
+### 2. List Appointments
+`GET /api/v1/appointments?businessId=...&date=...&status=...&staffId=...`
+- **Auth required:** Yes (`Bearer <token>`)
+- **Access Control (Rule R6):**
+  - `customer`: Returns only their own appointments.
+  - `staff`: Returns appointments assigned to them.
+  - `admin`: Returns all appointments for their business.
+- **Query Parameters:**
+  - `date`: Filter by date (YYYY-MM-DD)
+  - `status`: Filter by status (`scheduled`, `completed`, `cancelled`, `no-show`)
+  - `staffId`: Filter by staff member
+- **Response 200 (OK):**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "6738f1...",
+      "customerId": { "_id": "...", "name": "Deep Boghara" },
+      "staffId": { "_id": "...", "name": "Rahul Sharma" },
+      "serviceId": { "_id": "...", "name": "Haircut", "duration": 45, "price": 500 },
+      "date": "2026-11-20T00:00:00.000Z",
+      "startTime": "10:30",
+      "endTime": "11:15",
+      "status": "scheduled"
+    }
+  ],
+  "message": "Appointments fetched successfully"
+}
+```
+
+---
+
+### 3. Get Appointment by ID
+`GET /api/v1/appointments/:id`
+- **Auth required:** Yes (`Bearer <token>`)
+- **Access Control (Rule R6):** Verified against customer, staff, or business admin.
+- **Response 200 (OK):** Single populated appointment document.
+- **Error Responses:**
+  - `403 Forbidden`: Not authorized to view this appointment.
+  - `404 Not Found`: Appointment not found.
+
+---
+
 ## M6 — Availability _(TBD)_
 ## M7 — Appointment Management _(TBD)_
 ## M8 — Walk-in Tokens _(TBD)_

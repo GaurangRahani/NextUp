@@ -51,12 +51,17 @@ const getCurrentBusiness = async (req, res) => {
     business = await Business.findById(req.user.businessId);
   }
 
-  if (!business) {
+  if (!business && req.user.role === 'admin') {
     business = await Business.findOne({ ownerId: req.user._id });
   }
 
+  // If customer or staff has no businessId set, fallback to first available business
+  if (!business && req.user.role !== 'admin') {
+    business = await Business.findOne();
+  }
+
   if (!business) {
-    throw new ApiError(404, 'No business profile found for this admin account');
+    throw new ApiError(404, 'No business profile found');
   }
 
   sendResponse(res, 200, business, 'Business profile fetched successfully');

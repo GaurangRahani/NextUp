@@ -42,9 +42,34 @@ npm install
 npm run dev              # starts on http://localhost:5173
 ```
 
-### 4. Verify
+### 4. Seed Database (Optional)
+```bash
+cd server
+npm run seed              # Seeds 1 business, 5 services, 3 staff, 1 customer
+```
+
+### 5. Verify
 - Backend: `GET http://localhost:5000/api/v1/health` → 200
 - Frontend: open `http://localhost:5173`
+
+## Modules & Progress
+
+| Module | Title | Status | Rules Tested |
+|---|---|---|---|
+| **M0** | Setup & Foundation | ✅ Done | Express, Atlas, Vite, Tailwind v4, Shell |
+| **M1** | Authentication & Role-Based Authorization | ✅ Done | **R6** (Role Matrix & Ownership) |
+| **M2** | Business Profile & Operating Hours | ✅ Done | Weekday hours validation (open < close) |
+| **M3** | Service Management | ✅ Done | **R3** (Deactivate vs Delete) |
+| **M4** | Staff Management & Service Assignment | ✅ Done | Cross-business validation, Seed script |
+| **M5** | Appointment Booking | ✅ Done | **R2** (Hours, staff assignment, no past dates) |
+| **M6** | Availability & Conflict Prevention | ⏳ Pending | **R1** (No overlapping bookings) |
+| **M7** | Appointment Management | ⏳ Pending | Reschedule, Cancel |
+| **M8** | Walk-in Token Generation | ⏳ Pending | **R4** (Atomic daily token) |
+| **M9** | Queue Dashboard & Status | ⏳ Pending | **R5** (Queue transitions) |
+| **M10** | Queue Position & Wait Time | ⏳ Pending | **R8** (Dynamic wait calculation) |
+| **M11** | Business Dashboard | ⏳ Pending | Aggregation metrics |
+| **M12** | Email Notifications | ⏳ Pending | **R7** (Non-blocking notifications) |
+| **M13** | Integration, Deployment & Demo | ⏳ Pending | End-to-end demo flow |
 
 ## Running Tests
 ```bash

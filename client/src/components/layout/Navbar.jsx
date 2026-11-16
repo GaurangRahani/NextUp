@@ -38,6 +38,12 @@ const Navbar = () => {
               >
                 Dashboard
               </Link>
+              <Link
+                to="/book"
+                className="text-sm font-medium text-primary-600 hover:text-primary-700 transition-colors font-semibold"
+              >
+                Book Appointment
+              </Link>
               {user?.role === 'admin' && (
                 <>
                   <Link
@@ -51,6 +57,12 @@ const Navbar = () => {
                     className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors"
                   >
                     Services
+                  </Link>
+                  <Link
+                    to="/staff"
+                    className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors"
+                  >
+                    Staff
                   </Link>
                 </>
               )}

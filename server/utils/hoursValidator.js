@@ -90,6 +90,19 @@ const validateOperatingHours = (operatingHours) => {
   return true;
 };
 
+const minutesToTime = (totalMinutes) => {
+  if (typeof totalMinutes !== 'number' || isNaN(totalMinutes)) return null;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+};
+
+const getDayOfWeek = (dateInput, timezone = 'Asia/Kolkata') => {
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: timezone }).format(d);
+};
+
 const DEFAULT_OPERATING_HOURS = [
   { day: 'Monday', open: '09:00', close: '18:00', isClosed: false },
   { day: 'Tuesday', open: '09:00', close: '18:00', isClosed: false },
@@ -104,6 +117,8 @@ module.exports = {
   VALID_DAYS,
   TIME_REGEX,
   timeToMinutes,
+  minutesToTime,
+  getDayOfWeek,
   validateOperatingHours,
   DEFAULT_OPERATING_HOURS,
 };

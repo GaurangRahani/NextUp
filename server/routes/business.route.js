@@ -12,10 +12,10 @@ const authorize = require('../middleware/authorize');
 // Public route for customers
 router.get('/:id', getBusinessById);
 
-// Admin-protected routes
+// Protected routes
 router.use(authenticate);
+router.get('/', getCurrentBusiness);
 router.post('/', authorize('admin'), createBusiness);
-router.get('/', authorize('admin'), getCurrentBusiness);
 router.put('/:id', authorize('admin'), updateBusiness);
 
 module.exports = router;
