@@ -830,8 +830,234 @@ Integrated into `POST /api/v1/appointments`:
 
 ---
 
-## M7 — Appointment Management _(TBD)_
-## M8 — Walk-in Tokens _(TBD)_
+## M7 — Appointment Management
+
+### 1. Cancel Appointment
+`PATCH /api/v1/appointments/:id/cancel`
+- **Auth required:** Yes (`Bearer <token>`, customer who owns the booking, or staff/admin of the business)
+- **Request Body:**
+```json
+{
+  "reason": "Family emergency"
+}
+```
+- **Behavior:**
+  - Changes status from `scheduled` to `cancelled`.
+  - Frees up the slot immediately so other customers can book it.
+  - Rejects if the appointment is already cancelled (400) or already completed (400).
+- **Response 200 (OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "6738f1...",
+    "status": "cancelled",
+    "cancellationReason": "Family emergency",
+    "updatedAt": "2026-11-16T20:30:00.000Z"
+  },
+  "message": "Appointment cancelled successfully"
+}
+```
+- **Error Responses:**
+  - `400 Bad Request`: Appointment is already cancelled or already completed.
+  - `403 Forbidden`: Customer attempting to cancel someone else's appointment (Rule R6).
+  - `404 Not Found`: Appointment not found.
+
+---
+
+### 2. Reschedule Appointment
+`PATCH /api/v1/appointments/:id/reschedule`
+- **Auth required:** Yes (`Bearer <token>`, customer who owns the booking, or staff/admin)
+- **Request Body:**
+```json
+{
+  "date": "2026-11-25",
+  "startTime": "14:00"
+}
+```
+- **Behavior & Validation:**
+  - Re-evaluates **Rule R2** (new date/time cannot be in past, must fit inside operating hours, business not closed).
+  - Re-evaluates **Rule R1** conflict checks against other active bookings for the same staff member (excluding the appointment's own current slot).
+  - Re-computes `endTime` from `new startTime + service.duration`.
+  - Updates date, startTime, endTime, and leaves status as `scheduled`.
+- **Response 200 (OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "6738f1...",
+    "date": "2026-11-25T00:00:00.000Z",
+    "startTime": "14:00",
+    "endTime": "14:45",
+    "status": "scheduled"
+  },
+  "message": "Appointment rescheduled successfully"
+}
+```
+- **Error Responses:**
+  - `400 Bad Request`: Cannot reschedule cancelled or completed appointment, or invalid date/time outside operating hours (Rule R2).
+  - `403 Forbidden`: Unauthorized user (Rule R6).
+  - `409 Conflict`: Target slot is already taken by another active booking for this staff member (Rule R1).
+
+---
+
+### 3. Update Appointment Status (Admin / Staff)
+`PATCH /api/v1/appointments/:id/status`
+- **Auth required:** Yes (`Bearer <token>`, staff or admin)
+- **Request Body:**
+```json
+{
+  "status": "completed"
+}
+```
+- **Allowed Transitions:**
+  - `scheduled` → `completed`
+  - `scheduled` → `no-show`
+  - `scheduled` → `cancelled`
+- **Response 200 (OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "6738f1...",
+    "status": "completed"
+  },
+  "message": "Appointment status updated to completed"
+}
+```
+- **Error Responses:**
+  - `400 Bad Request`: Invalid status or illegal status transition.
+  - `403 Forbidden`: Customer role cannot update status directly (Rule R6).
+
+---
+
+### 4. List Appointments by Timeframe
+`GET /api/v1/appointments?timeframe=upcoming|past&status=...`
+- **Auth required:** Yes (`Bearer <token>`)
+- **Query Parameters:**
+  - `timeframe`: `"upcoming"` (appointments with date/time >= now) or `"past"` (appointments with date/time < now)
+  - `status`: filter by specific status
+  - `staffId`: filter by staff member (admin only)
+- **Response 200 (OK):** Array of populated appointments.
+
+---
+
+## M8 — Walk-in Tokens (Rule R4)
+
+### 1. Generate Walk-in Token
+`POST /api/v1/queue/tokens`
+- **Auth required:** Optional (`optionalAuth` — customers/guests can generate at kiosk, or staff/admin can generate at desk)
+- **Request Body:**
+```json
+{
+  "businessId": "6738b8...",
+  "serviceId": "6738d2...",
+  "guestName": "Jane Doe",
+  "guestPhone": "9876543210"
+}
+```
+- **Validation Rules:**
+  - `businessId`: required MongoId. Business must exist and not be closed today.
+  - `serviceId`: required MongoId. Service must belong to `businessId` and be active (`isActive: true`).
+  - `guestName`: required if user is not authenticated (minimum 2 chars). If authenticated, defaults to `req.user.name`.
+  - `guestPhone`: optional phone number string.
+- **Business Rule R4 & Decision D4 Logic:**
+  - Queue date is computed as today's date (`YYYY-MM-DD` in UTC/business timezone).
+  - Atomic counter increment using `DailyCounter.findOneAndUpdate({ businessId, date: queueDate }, { $inc: { count: 1 } }, { new: true, upsert: true })`.
+  - Sequential token number begins at 1 each calendar day per business.
+  - Unique compound index `{ businessId: 1, queueDate: 1, tokenNumber: 1 }` on `QueueToken` prevents duplicates.
+- **Response 201 (Created):**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "673901...",
+    "businessId": {
+      "_id": "6738b8...",
+      "name": "Luxe Salon & Spa"
+    },
+    "serviceId": {
+      "_id": "6738d2...",
+      "name": "Haircut & Styling",
+      "duration": 45,
+      "price": 30
+    },
+    "customerId": "6738a1...",
+    "guestName": "Jane Doe",
+    "guestPhone": "9876543210",
+    "tokenNumber": 1,
+    "queueDate": "2026-11-16",
+    "status": "waiting",
+    "createdAt": "2026-11-16T20:30:00.000Z",
+    "updatedAt": "2026-11-16T20:30:00.000Z"
+  },
+  "message": "Token generated successfully"
+}
+```
+- **Error Responses:**
+  - `400 Bad Request`: Missing businessId or serviceId, business closed today, service inactive, missing guestName for unauthenticated user.
+  - `404 Not Found`: Business or Service not found.
+
+---
+
+### 2. Get Single Token by ID
+`GET /api/v1/queue/tokens/:id`
+- **Auth required:** Optional (public token receipt page / live status screen)
+- **Response 200 (OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "673901...",
+    "businessId": {
+      "_id": "6738b8...",
+      "name": "Luxe Salon & Spa"
+    },
+    "serviceId": {
+      "_id": "6738d2...",
+      "name": "Haircut & Styling",
+      "duration": 45,
+      "price": 30
+    },
+    "tokenNumber": 1,
+    "queueDate": "2026-11-16",
+    "status": "waiting",
+    "guestName": "Jane Doe",
+    "guestPhone": "9876543210"
+  },
+  "message": "Token retrieved successfully"
+}
+```
+- **Error Responses:**
+  - `404 Not Found`: Token not found.
+
+---
+
+### 3. Get Today's Queue Tokens for Business
+`GET /api/v1/queue/today?businessId=...`
+- **Auth required:** Optional (for public queue display boards and kiosk monitors)
+- **Query Parameters:**
+  - `businessId` (required)
+  - `status` (optional: `'waiting'`, `'called'`, `'in-service'`, `'completed'`, `'cancelled'`, `'no-show'`)
+- **Response 200 (OK):**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "673901...",
+      "tokenNumber": 1,
+      "guestName": "Jane Doe",
+      "status": "waiting",
+      "serviceId": { "name": "Haircut & Styling", "duration": 45 }
+    }
+  ],
+  "message": "Today's queue tokens retrieved successfully"
+}
+```
+
+---
+
 ## M9 — Queue Dashboard _(TBD)_
 ## M10 — Queue Position & Wait _(TBD)_
 ## M11 — Business Dashboard _(TBD)_

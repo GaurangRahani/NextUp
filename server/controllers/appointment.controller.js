@@ -290,7 +290,7 @@ const bookAppointment = async (req, res) => {
  * GET /api/v1/appointments
  */
 const getAppointments = async (req, res) => {
-  const { date, status, staffId, customerId, businessId } = req.query;
+  const { date, status, staffId, customerId, businessId, timeframe } = req.query;
 
   const filter = {};
 
@@ -303,6 +303,25 @@ const getAppointments = async (req, res) => {
     const targetBusinessId = await resolveBusinessId(req, businessId);
     if (targetBusinessId) {
       filter.businessId = targetBusinessId;
+    }
+  }
+
+  // Timeframe filter: upcoming vs past
+  if (timeframe === 'upcoming') {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    filter.date = { $gte: today };
+    if (!status) {
+      filter.status = 'scheduled';
+    }
+  } else if (timeframe === 'past') {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (!status) {
+      filter.$or = [
+        { date: { $lt: today } },
+        { status: { $in: ['completed', 'cancelled', 'no-show'] } },
+      ];
     }
   }
 
@@ -337,7 +356,7 @@ const getAppointments = async (req, res) => {
       { path: 'serviceId', select: 'name duration price' },
       { path: 'businessId', select: 'name timezone' },
     ])
-    .sort({ date: 1, startTime: 1 });
+    .sort({ date: timeframe === 'past' ? -1 : 1, startTime: 1 });
 
   sendResponse(res, 200, appointments, 'Appointments fetched successfully');
 };
@@ -368,8 +387,224 @@ const getAppointmentById = async (req, res) => {
   sendResponse(res, 200, appointment, 'Appointment fetched successfully');
 };
 
+/**
+ * Cancel an appointment (Rule R6)
+ * PATCH /api/v1/appointments/:id/cancel
+ */
+const cancelAppointment = async (req, res) => {
+  const { reason } = req.body;
+  const appointment = await Appointment.findById(req.params.id);
+
+  if (!appointment) {
+    throw new ApiError(404, 'Appointment not found');
+  }
+
+  // Rule R6 ownership check
+  assertOwnership(req, {
+    customerId: appointment.customerId,
+    staffId: appointment.staffId,
+    businessId: appointment.businessId,
+  });
+
+  if (appointment.status === 'cancelled') {
+    throw new ApiError(400, 'Appointment is already cancelled');
+  }
+
+  if (appointment.status === 'completed') {
+    throw new ApiError(400, 'Cannot cancel an appointment that has already been completed');
+  }
+
+  appointment.status = 'cancelled';
+  if (reason && reason.trim()) {
+    appointment.cancellationReason = reason.trim();
+  }
+
+  await appointment.save();
+
+  const populated = await Appointment.findById(appointment._id).populate([
+    { path: 'customerId', select: 'name email phone' },
+    { path: 'staffId', select: 'name email' },
+    { path: 'serviceId', select: 'name duration price' },
+    { path: 'businessId', select: 'name timezone address' },
+  ]);
+
+  sendResponse(res, 200, populated, 'Appointment cancelled successfully');
+};
+
+/**
+ * Reschedule an appointment (Re-running Rule R1 and Rule R2)
+ * PATCH /api/v1/appointments/:id/reschedule
+ */
+const rescheduleAppointment = async (req, res) => {
+  const { date, startTime } = req.body;
+
+  if (!date || !startTime) {
+    throw new ApiError(400, 'Please provide new date and startTime');
+  }
+
+  const appointment = await Appointment.findById(req.params.id);
+  if (!appointment) {
+    throw new ApiError(404, 'Appointment not found');
+  }
+
+  // Rule R6 ownership check
+  assertOwnership(req, {
+    customerId: appointment.customerId,
+    staffId: appointment.staffId,
+    businessId: appointment.businessId,
+  });
+
+  if (appointment.status === 'cancelled') {
+    throw new ApiError(
+      400,
+      'Cannot reschedule a cancelled appointment. Please book a new appointment.'
+    );
+  }
+
+  if (appointment.status === 'completed') {
+    throw new ApiError(
+      400,
+      'Cannot reschedule an appointment that has already been completed'
+    );
+  }
+
+  // Fetch business and service to validate operating hours and duration
+  const business = await Business.findById(appointment.businessId);
+  const service = await Service.findById(appointment.serviceId);
+
+  if (!business || !service) {
+    throw new ApiError(404, 'Associated business or service not found');
+  }
+
+  // Rule R2: Check new date is not in the past
+  const newDate = new Date(date);
+  if (isNaN(newDate.getTime())) {
+    throw new ApiError(400, 'Invalid date format');
+  }
+
+  const [startHour, startMinute] = startTime.split(':').map(Number);
+  const newDateTime = new Date(newDate);
+  newDateTime.setHours(startHour, startMinute, 0, 0);
+
+  const now = new Date();
+  if (newDateTime.getTime() < now.getTime() - 60000) {
+    throw new ApiError(400, 'Rule R2: Rescheduled date and time cannot be in the past');
+  }
+
+  // Rule R2: Check operating hours for day of week
+  const dayOfWeek = getDayOfWeek(newDate, business.timezone || 'Asia/Kolkata');
+  const operatingDay = (business.operatingHours || []).find((h) => h.day === dayOfWeek);
+
+  if (!operatingDay || operatingDay.isClosed) {
+    throw new ApiError(400, `Rule R2: Business is closed on ${dayOfWeek}`);
+  }
+
+  const startMinutes = timeToMinutes(startTime);
+  if (startMinutes === null) {
+    throw new ApiError(400, 'Invalid startTime format');
+  }
+
+  const endMinutes = startMinutes + service.duration;
+  const openMinutes = timeToMinutes(operatingDay.open);
+  const closeMinutes = timeToMinutes(operatingDay.close);
+
+  if (startMinutes < openMinutes || endMinutes > closeMinutes) {
+    throw new ApiError(
+      400,
+      `Rule R2: Rescheduled appointment must fit inside operating hours (${operatingDay.open} - ${operatingDay.close}) for ${dayOfWeek}`
+    );
+  }
+
+  const endTime = minutesToTime(endMinutes);
+
+  // Rule R1: Check conflict for staff member (excluding this appointment's own id!)
+  const conflict = await findConflictingAppointment({
+    AppointmentModel: Appointment,
+    staffId: appointment.staffId,
+    date: newDate,
+    startTime,
+    endTime,
+    excludeAppointmentId: appointment._id,
+  });
+
+  if (conflict) {
+    throw new ApiError(
+      409,
+      'Rule R1: Target slot is already taken by another booking for this staff member'
+    );
+  }
+
+  appointment.date = newDate;
+  appointment.startTime = startTime;
+  appointment.endTime = endTime;
+  appointment.status = 'scheduled';
+  await appointment.save();
+
+  const populated = await Appointment.findById(appointment._id).populate([
+    { path: 'customerId', select: 'name email phone' },
+    { path: 'staffId', select: 'name email' },
+    { path: 'serviceId', select: 'name duration price' },
+    { path: 'businessId', select: 'name timezone address' },
+  ]);
+
+  sendResponse(res, 200, populated, 'Appointment rescheduled successfully');
+};
+
+/**
+ * Update appointment status (Admin/Staff only)
+ * PATCH /api/v1/appointments/:id/status
+ */
+const updateAppointmentStatus = async (req, res) => {
+  const { status } = req.body;
+
+  const validStatuses = ['completed', 'no-show', 'cancelled'];
+  if (!status || !validStatuses.includes(status)) {
+    throw new ApiError(
+      400,
+      `Invalid status. Allowed values: ${validStatuses.join(', ')}`
+    );
+  }
+
+  const appointment = await Appointment.findById(req.params.id);
+  if (!appointment) {
+    throw new ApiError(404, 'Appointment not found');
+  }
+
+  assertOwnership(req, {
+    staffId: appointment.staffId,
+    businessId: appointment.businessId,
+  });
+
+  if (appointment.status === 'completed' || appointment.status === 'cancelled') {
+    throw new ApiError(
+      400,
+      `Cannot change status of an appointment that is already ${appointment.status}`
+    );
+  }
+
+  appointment.status = status;
+  await appointment.save();
+
+  const populated = await Appointment.findById(appointment._id).populate([
+    { path: 'customerId', select: 'name email phone' },
+    { path: 'staffId', select: 'name email' },
+    { path: 'serviceId', select: 'name duration price' },
+    { path: 'businessId', select: 'name timezone address' },
+  ]);
+
+  sendResponse(
+    res,
+    200,
+    populated,
+    `Appointment status updated to ${status}`
+  );
+};
+
 module.exports = {
   bookAppointment,
   getAppointments,
   getAppointmentById,
+  cancelAppointment,
+  rescheduleAppointment,
+  updateAppointmentStatus,
 };

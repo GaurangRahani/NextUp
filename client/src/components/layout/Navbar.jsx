@@ -30,6 +30,13 @@ const Navbar = () => {
             <span>NextUp</span>
           </Link>
 
+          <Link
+            to="/walk-in"
+            className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors"
+          >
+            Walk-in Kiosk
+          </Link>
+
           {isAuthenticated && (
             <>
               <Link
@@ -37,6 +44,12 @@ const Navbar = () => {
                 className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors"
               >
                 Dashboard
+              </Link>
+              <Link
+                to="/appointments"
+                className="text-sm font-medium text-gray-600 hover:text-primary-600 transition-colors"
+              >
+                Appointments
               </Link>
               <Link
                 to="/book"

@@ -5,6 +5,11 @@ export const getCurrentBusiness = async () => {
   return res.data;
 };
 
+export const getDefaultBusiness = async () => {
+  const res = await axiosInstance.get('/business/default');
+  return res.data;
+};
+
 export const getBusinessById = async (id) => {
   const res = await axiosInstance.get(`/business/${id}`);
   return res.data;

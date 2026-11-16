@@ -3,13 +3,15 @@ const router = express.Router();
 const {
   createBusiness,
   getCurrentBusiness,
+  getDefaultBusiness,
   getBusinessById,
   updateBusiness,
 } = require('../controllers/business.controller');
 const authenticate = require('../middleware/auth');
 const authorize = require('../middleware/authorize');
 
-// Public route for customers
+// Public route for kiosks & customers
+router.get('/default', getDefaultBusiness);
 router.get('/:id', getBusinessById);
 
 // Protected routes

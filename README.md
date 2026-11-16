@@ -63,8 +63,8 @@ npm run seed              # Seeds 1 business, 5 services, 3 staff, 1 customer
 | **M4** | Staff Management & Service Assignment | ✅ Done | Cross-business validation, Seed script |
 | **M5** | Appointment Booking | ✅ Done | **R2** (Hours, staff assignment, no past dates) |
 | **M6** | Availability & Conflict Prevention | ✅ Done | **R1** (No overlapping bookings, back-to-back allowed) |
-| **M7** | Appointment Management | ⏳ Pending | Reschedule, Cancel |
-| **M8** | Walk-in Token Generation | ⏳ Pending | **R4** (Atomic daily token) |
+| **M7** | Appointment Management | ✅ Done | Reschedule, Cancel, Status Lifecycle |
+| **M8** | Walk-in Token Generation | ✅ Done | **R4** (Atomic daily token) |
 | **M9** | Queue Dashboard & Status | ⏳ Pending | **R5** (Queue transitions) |
 | **M10** | Queue Position & Wait Time | ⏳ Pending | **R8** (Dynamic wait calculation) |
 | **M11** | Business Dashboard | ⏳ Pending | Aggregation metrics |

@@ -49,16 +49,20 @@ const appointmentSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    cancellationReason: {
+      type: String,
+      default: '',
+    },
   },
   {
     timestamps: true,
   }
 );
 
-// Compound unique safeguard for double-booking (Decision D3)
+// Compound unique safeguard for double-booking excluding cancelled (Decision D3)
 appointmentSchema.index(
   { staffId: 1, date: 1, startTime: 1 },
-  { unique: true }
+  { unique: true, partialFilterExpression: { status: { $ne: 'cancelled' } } }
 );
 
 const Appointment = mongoose.model('Appointment', appointmentSchema);

@@ -68,6 +68,20 @@ const getCurrentBusiness = async (req, res) => {
 };
 
 /**
+ * Get default business profile (Public for kiosks and walk-ins)
+ * GET /api/v1/business/default
+ */
+const getDefaultBusiness = async (req, res) => {
+  const business = await Business.findOne();
+
+  if (!business) {
+    throw new ApiError(404, 'No business profile found');
+  }
+
+  sendResponse(res, 200, business, 'Business profile fetched successfully');
+};
+
+/**
  * Get business profile by ID (Public for customers)
  * GET /api/v1/business/:id
  */
@@ -130,6 +144,7 @@ const updateBusiness = async (req, res) => {
 module.exports = {
   createBusiness,
   getCurrentBusiness,
+  getDefaultBusiness,
   getBusinessById,
   updateBusiness,
 };
