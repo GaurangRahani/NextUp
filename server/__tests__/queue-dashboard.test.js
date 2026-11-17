@@ -351,4 +351,125 @@ describe('Module 9: Queue Dashboard & Status Management (Rule R5)', () => {
       expect(res.body.message).toMatch(/queue token not found/i);
     });
   });
+
+  describe('GET /api/v1/queue/dashboard — Queue Dashboard', () => {
+    const mockTokenList = [
+      { _id: 't1', tokenNumber: 1, guestName: 'Alice', status: 'completed', serviceId: { name: 'Haircut' } },
+      { _id: 't2', tokenNumber: 2, guestName: 'Bob', status: 'in-service', serviceId: { name: 'Massage' } },
+      { _id: 't3', tokenNumber: 3, guestName: 'Carol', status: 'waiting', serviceId: { name: 'Facial' } },
+      { _id: 't4', tokenNumber: 4, guestName: 'Dave', status: 'waiting', serviceId: { name: 'Haircut' } },
+      { _id: 't5', tokenNumber: 5, guestName: 'Eve', status: 'cancelled', serviceId: { name: 'Haircut' } },
+    ];
+
+    const mockQueueFind = (list = mockTokenList) => {
+      jest.spyOn(QueueToken, 'find').mockReturnValue({
+        populate: jest.fn().mockReturnValue({
+          populate: jest.fn().mockReturnValue({
+            sort: jest.fn().mockResolvedValue(list),
+          }),
+        }),
+      });
+    };
+
+    it('returns dashboard with tokens and status summary counts', async () => {
+      jest.spyOn(User, 'findById').mockResolvedValue(mockAdminUser);
+      mockQueueFind();
+
+      const res = await request(app)
+        .get(`/api/v1/queue/dashboard?businessId=${businessId}`)
+        .set('Authorization', `Bearer ${adminJwt}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.tokens).toHaveLength(5);
+      expect(res.body.data.summary.waiting).toBe(2);
+      expect(res.body.data.summary.completed).toBe(1);
+      expect(res.body.data.summary.cancelled).toBe(1);
+      expect(res.body.data.summary['in-service']).toBe(1);
+      expect(res.body.data.summary.total).toBe(5);
+    });
+
+    it('returns tokens sorted by tokenNumber (ascending)', async () => {
+      jest.spyOn(User, 'findById').mockResolvedValue(mockAdminUser);
+      mockQueueFind();
+
+      const res = await request(app)
+        .get(`/api/v1/queue/dashboard?businessId=${businessId}`)
+        .set('Authorization', `Bearer ${adminJwt}`);
+
+      expect(res.status).toBe(200);
+      const tokenNums = res.body.data.tokens.map((t) => t.tokenNumber);
+      expect(tokenNums).toEqual([1, 2, 3, 4, 5]);
+    });
+
+    it('returns empty tokens array and zero summary when no tokens exist for the day', async () => {
+      jest.spyOn(User, 'findById').mockResolvedValue(mockAdminUser);
+      mockQueueFind([]);
+
+      const res = await request(app)
+        .get(`/api/v1/queue/dashboard?businessId=${businessId}`)
+        .set('Authorization', `Bearer ${adminJwt}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.tokens).toHaveLength(0);
+      expect(res.body.data.summary.total).toBe(0);
+      expect(res.body.data.summary.waiting).toBe(0);
+    });
+
+    it('accepts an optional ?date= query parameter and echoes it in response', async () => {
+      jest.spyOn(User, 'findById').mockResolvedValue(mockAdminUser);
+      mockQueueFind([]);
+
+      const res = await request(app)
+        .get(`/api/v1/queue/dashboard?businessId=${businessId}&date=2026-11-20`)
+        .set('Authorization', `Bearer ${adminJwt}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.queueDate).toBe('2026-11-20');
+    });
+
+    it('staff can access dashboard of their own business (200)', async () => {
+      jest.spyOn(User, 'findById').mockResolvedValue(mockStaffUser);
+      mockQueueFind([]);
+
+      const res = await request(app)
+        .get(`/api/v1/queue/dashboard?businessId=${businessId}`)
+        .set('Authorization', `Bearer ${staffJwt}`);
+
+      expect(res.status).toBe(200);
+    });
+
+    it('returns 400 when businessId is missing', async () => {
+      jest.spyOn(User, 'findById').mockResolvedValue(mockAdminUser);
+
+      const res = await request(app)
+        .get('/api/v1/queue/dashboard')
+        .set('Authorization', `Bearer ${adminJwt}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/businessId/i);
+    });
+
+    it('returns 401 when unauthenticated', async () => {
+      const res = await request(app).get(
+        `/api/v1/queue/dashboard?businessId=${businessId}`
+      );
+
+      expect(res.status).toBe(401);
+    });
+
+    it('R6: returns 403 when staff tries to access a different business queue', async () => {
+      jest.spyOn(User, 'findById').mockResolvedValue({
+        ...mockStaffUser,
+        businessId: otherBusinessId,
+      });
+
+      const res = await request(app)
+        .get(`/api/v1/queue/dashboard?businessId=${businessId}`)
+        .set('Authorization', `Bearer ${staffJwt}`);
+
+      expect(res.status).toBe(403);
+      expect(res.body.message).toMatch(/R6/);
+    });
+  });
 });
