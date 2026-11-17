@@ -6,6 +6,16 @@ const ApiError = require('../utils/ApiError');
 const sendResponse = require('../utils/sendResponse');
 const { getDayOfWeek } = require('../utils/hoursValidator');
 
+// Rule R5 — Allowed status transitions
+const ALLOWED_TRANSITIONS = {
+  waiting: ['called', 'cancelled'],
+  called: ['in-service', 'no-show'],
+  'in-service': ['completed'],
+  completed: [],
+  cancelled: [],
+  'no-show': [],
+};
+
 /**
  * Generate walk-in token (Rule R4)
  * POST /api/v1/queue/tokens
