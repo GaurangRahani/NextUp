@@ -242,9 +242,62 @@ const updateTokenStatus = async (req, res, next) => {
   );
 };
 
+
+/**
+ * Get queue dashboard for a business (sorted by tokenNumber, all active statuses)
+ * GET /api/v1/queue/dashboard?businessId=...&date=...
+ */
+const getQueueDashboard = async (req, res, next) => {
+  const { businessId, date } = req.query;
+
+  if (!businessId) {
+    return next(new ApiError(400, 'businessId query parameter is required'));
+  }
+
+  // Rule R6 — admin/staff must belong to the business
+  const user = req.user;
+  if (
+    user.businessId &&
+    user.businessId.toString() !== businessId.toString()
+  ) {
+    return next(
+      new ApiError(403, 'R6: Access denied — you can only view your own business queue')
+    );
+  }
+
+  const queueDate = date || new Date().toISOString().split('T')[0];
+
+  const tokens = await QueueToken.find({ businessId, queueDate })
+    .populate('serviceId', 'name duration price')
+    .populate('servedBy', 'name email')
+    .sort({ tokenNumber: 1 });
+
+  // Build summary counts per status
+  const summary = {
+    waiting: 0,
+    called: 0,
+    'in-service': 0,
+    completed: 0,
+    cancelled: 0,
+    'no-show': 0,
+    total: tokens.length,
+  };
+  tokens.forEach((t) => {
+    if (summary[t.status] !== undefined) summary[t.status]++;
+  });
+
+  return sendResponse(
+    res,
+    200,
+    { queueDate, summary, tokens },
+    'Queue dashboard fetched successfully'
+  );
+};
+
 module.exports = {
   generateToken,
   getTokenById,
   getTodayQueue,
   updateTokenStatus,
+  getQueueDashboard,
 };
