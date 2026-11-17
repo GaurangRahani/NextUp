@@ -2,6 +2,7 @@ const QueueToken = require('../models/QueueToken');
 const DailyCounter = require('../models/DailyCounter');
 const Business = require('../models/Business');
 const Service = require('../models/Service');
+const User = require('../models/User');
 const ApiError = require('../utils/ApiError');
 const sendResponse = require('../utils/sendResponse');
 const { getDayOfWeek } = require('../utils/hoursValidator');
@@ -139,8 +140,111 @@ const getTodayQueue = async (req, res, next) => {
   return sendResponse(res, 200, tokens, "Today's queue tokens retrieved successfully");
 };
 
+
+/**
+ * Update queue token status (Rule R5)
+ * PATCH /api/v1/queue/tokens/:id/status
+ */
+const updateTokenStatus = async (req, res, next) => {
+  const { status } = req.body;
+
+  if (!status) {
+    return next(new ApiError(400, 'New status is required'));
+  }
+
+  const validStatuses = ['waiting', 'called', 'in-service', 'completed', 'cancelled', 'no-show'];
+  if (!validStatuses.includes(status)) {
+    return next(
+      new ApiError(400, `Invalid status. Must be one of: ${validStatuses.join(', ')}`)
+    );
+  }
+
+  const token = await QueueToken.findById(req.params.id);
+  if (!token) {
+    return next(new ApiError(404, 'Queue token not found'));
+  }
+
+  // Rule R6 — Access control
+  const user = req.user;
+  const isAdmin = user.role === 'admin';
+  const isStaff = user.role === 'staff';
+  const isCustomer = user.role === 'customer';
+
+  // Customers can only cancel their own token (waiting → cancelled)
+  if (isCustomer) {
+    const isOwnToken =
+      token.customerId && token.customerId.toString() === user._id.toString();
+    if (!isOwnToken) {
+      return next(
+        new ApiError(403, 'R6: Customers can only update their own queue token')
+      );
+    }
+    if (status !== 'cancelled') {
+      return next(
+        new ApiError(403, 'R6: Customers may only cancel their own token')
+      );
+    }
+  }
+
+  // Staff and admins must belong to the token's business
+  if (isStaff || isAdmin) {
+    if (
+      user.businessId &&
+      token.businessId.toString() !== user.businessId.toString()
+    ) {
+      return next(
+        new ApiError(403, 'R6: Access denied — token belongs to a different business')
+      );
+    }
+  }
+
+  // Rule R5 — Enforce allowed transitions
+  const currentStatus = token.status;
+  const allowed = ALLOWED_TRANSITIONS[currentStatus];
+
+  if (!allowed.includes(status)) {
+    return next(
+      new ApiError(
+        400,
+        `R5: Invalid transition. Status '${currentStatus}' can only move to: [${allowed.join(', ') || 'none'}]`
+      )
+    );
+  }
+
+  // Track timestamps for lifecycle fields
+  const now = new Date();
+  if (status === 'called') {
+    token.calledAt = now;
+    if (isStaff || isAdmin) {
+      token.servedBy = user._id;
+    }
+  }
+  if (status === 'in-service') {
+    token.servedAt = now;
+  }
+  if (status === 'completed') {
+    token.completedAt = now;
+  }
+
+  token.status = status;
+  await token.save();
+
+  const populated = await QueueToken.findById(token._id)
+    .populate('serviceId', 'name duration price')
+    .populate('businessId', 'name')
+    .populate('servedBy', 'name email');
+
+  return sendResponse(
+    res,
+    200,
+    populated,
+    `R5: Token status updated to '${status}' successfully`
+  );
+};
+
 module.exports = {
   generateToken,
   getTokenById,
   getTodayQueue,
+  updateTokenStatus,
 };
