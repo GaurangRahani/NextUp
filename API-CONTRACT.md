@@ -1058,6 +1058,13 @@ Integrated into `POST /api/v1/appointments`:
 
 ---
 
+## M9 — Queue Dashboard & Status Management (Rule R5)
+
+### 1. Update Queue Token Status
+`PATCH /api/v1/queue/tokens/:id/status`
+- Specification for status transitions (waiting, called, in-service, completed, cancelled, no-show)
+- Enforces Rule R5 allowed transitions and Rule R6 access control
+
 ## M9 — Queue Dashboard _(TBD)_
 ## M10 — Queue Position & Wait _(TBD)_
 ## M11 — Business Dashboard _(TBD)_
