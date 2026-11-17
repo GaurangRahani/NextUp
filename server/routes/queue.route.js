@@ -4,12 +4,17 @@ const {
   generateToken,
   getTokenById,
   getTodayQueue,
+  updateTokenStatus,
 } = require('../controllers/queue.controller');
+const authenticate = require('../middleware/auth');
 const { optionalAuth } = require('../middleware/auth');
 
 // M8: Walk-in token generation & retrieval
 router.post('/tokens', optionalAuth, generateToken);
 router.get('/tokens/:id', getTokenById);
 router.get('/today', getTodayQueue);
+
+// M9: Queue Token Status Management (Rule R5)
+router.patch('/tokens/:id/status', authenticate, updateTokenStatus);
 
 module.exports = router;
