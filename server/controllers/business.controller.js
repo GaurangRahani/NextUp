@@ -1,5 +1,7 @@
 const Business = require('../models/Business');
 const User = require('../models/User');
+const Appointment = require('../models/Appointment');
+const QueueToken = require('../models/QueueToken');
 const ApiError = require('../utils/ApiError');
 const sendResponse = require('../utils/sendResponse');
 const {
@@ -141,10 +143,213 @@ const updateBusiness = async (req, res) => {
   );
 };
 
+/**
+ * Get business dashboard summary (M11)
+ * GET /api/v1/business/dashboard?date=YYYY-MM-DD
+ * Admin only — scoped to their own business
+ */
+const getBusinessDashboard = async (req, res, next) => {
+  const user = req.user;
+
+  // Must be admin and have a business
+  if (!user.businessId) {
+    return next(new ApiError(403, 'No business associated with your account'));
+  }
+
+  const businessId = user.businessId;
+  const date = req.query.date || new Date().toISOString().split('T')[0];
+
+  // Validate date format
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return next(new ApiError(400, 'Invalid date format. Use YYYY-MM-DD'));
+  }
+
+  // Build date range for Appointment (stored as Date object at midnight UTC)
+  const dayStart = new Date(`${date}T00:00:00.000Z`);
+  const dayEnd = new Date(`${date}T23:59:59.999Z`);
+
+  // ── Appointment Aggregation ──────────────────────────────────────────────
+  const [apptStats] = await Appointment.aggregate([
+    {
+      $match: {
+        businessId: businessId,
+        date: { $gte: dayStart, $lte: dayEnd },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        scheduled: {
+          $sum: { $cond: [{ $eq: ['$status', 'scheduled'] }, 1, 0] },
+        },
+        completed: {
+          $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] },
+        },
+        cancelled: {
+          $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] },
+        },
+        noShow: {
+          $sum: { $cond: [{ $eq: ['$status', 'no-show'] }, 1, 0] },
+        },
+      },
+    },
+  ]);
+
+  const appointments = apptStats || {
+    total: 0,
+    scheduled: 0,
+    completed: 0,
+    cancelled: 0,
+    noShow: 0,
+  };
+  // Remove MongoDB _id from result
+  delete appointments._id;
+
+  // ── Queue / Token Aggregation ────────────────────────────────────────────
+  const [queueStats] = await QueueToken.aggregate([
+    {
+      $match: {
+        businessId: businessId,
+        queueDate: date,
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        waiting: {
+          $sum: { $cond: [{ $eq: ['$status', 'waiting'] }, 1, 0] },
+        },
+        called: {
+          $sum: { $cond: [{ $eq: ['$status', 'called'] }, 1, 0] },
+        },
+        inService: {
+          $sum: { $cond: [{ $eq: ['$status', 'in-service'] }, 1, 0] },
+        },
+        completed: {
+          $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] },
+        },
+        cancelled: {
+          $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] },
+        },
+        noShow: {
+          $sum: { $cond: [{ $eq: ['$status', 'no-show'] }, 1, 0] },
+        },
+      },
+    },
+  ]);
+
+  const queue = queueStats || {
+    total: 0,
+    waiting: 0,
+    called: 0,
+    inService: 0,
+    completed: 0,
+    cancelled: 0,
+    noShow: 0,
+  };
+  delete queue._id;
+
+  // ── Revenue Estimate (from completed appointments) ───────────────────────
+  const revenueData = await Appointment.aggregate([
+    {
+      $match: {
+        businessId: businessId,
+        date: { $gte: dayStart, $lte: dayEnd },
+        status: 'completed',
+      },
+    },
+    {
+      $lookup: {
+        from: 'services',
+        localField: 'serviceId',
+        foreignField: '_id',
+        as: 'service',
+      },
+    },
+    { $unwind: { path: '$service', preserveNullAndEmpty: false } },
+    {
+      $group: {
+        _id: null,
+        estimatedRevenue: { $sum: '$service.price' },
+      },
+    },
+  ]);
+
+  const estimatedRevenue =
+    revenueData.length > 0 ? revenueData[0].estimatedRevenue : 0;
+
+  // ── Top Services (by appointment count today) ────────────────────────────
+  const topServices = await Appointment.aggregate([
+    {
+      $match: {
+        businessId: businessId,
+        date: { $gte: dayStart, $lte: dayEnd },
+      },
+    },
+    {
+      $group: {
+        _id: '$serviceId',
+        count: { $sum: 1 },
+      },
+    },
+    {
+      $lookup: {
+        from: 'services',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'service',
+      },
+    },
+    { $unwind: { path: '$service', preserveNullAndEmpty: false } },
+    {
+      $project: {
+        _id: 0,
+        serviceId: '$_id',
+        name: '$service.name',
+        count: 1,
+      },
+    },
+    { $sort: { count: -1 } },
+    { $limit: 5 },
+  ]);
+
+  // ── Totals for summary cards ─────────────────────────────────────────────
+  const activeQueueCount = queue.waiting + queue.called + queue.inService;
+
+  return sendResponse(
+    res,
+    200,
+    {
+      date,
+      businessId,
+      summary: {
+        totalAppointments: appointments.total,
+        scheduledAppointments: appointments.scheduled,
+        completedAppointments: appointments.completed,
+        cancelledAppointments: appointments.cancelled,
+        noShowAppointments: appointments.noShow,
+        totalQueueTokens: queue.total,
+        activeQueueCount,
+        waitingInQueue: queue.waiting,
+        inServiceCount: queue.inService,
+        completedQueueTokens: queue.completed,
+        estimatedRevenue,
+      },
+      appointments,
+      queue,
+      topServices,
+    },
+    'Business dashboard data fetched successfully'
+  );
+};
+
 module.exports = {
   createBusiness,
   getCurrentBusiness,
   getDefaultBusiness,
   getBusinessById,
   updateBusiness,
+  getBusinessDashboard,
 };
