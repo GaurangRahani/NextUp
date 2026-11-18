@@ -1062,10 +1062,95 @@ Integrated into `POST /api/v1/appointments`:
 
 ### 1. Update Queue Token Status
 `PATCH /api/v1/queue/tokens/:id/status`
-- Specification for status transitions (waiting, called, in-service, completed, cancelled, no-show)
-- Enforces Rule R5 allowed transitions and Rule R6 access control
+- **Auth required:** Yes (`Bearer <token>`, role: `customer`, `staff`, or `admin`)
+- **Request Body:**
+```json
+{ "status": "called" }
+```
+- **Business Rule R5 — Allowed Transitions:**
+  | From | Allowed next statuses |
+  |---|---|
+  | `waiting` | `called`, `cancelled` |
+  | `called` | `in-service`, `no-show` |
+  | `in-service` | `completed` |
+  | `completed` | _(none)_ |
+  | `cancelled` | _(none)_ |
+  | `no-show` | _(none)_ |
+  - Any other transition returns `400 Bad Request`.
+- **Rule R6 — Access Control:**
+  - `customer`: may only cancel their **own** token (`waiting → cancelled`).
+  - `staff` / `admin`: may perform any allowed transition on tokens of their business.
+- **Response 200 (OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "673901...",
+    "tokenNumber": 3,
+    "guestName": "Alice",
+    "status": "called",
+    "calledAt": "2026-11-18T10:15:00.000Z",
+    "servedBy": { "_id": "...", "name": "Rahul Sharma", "email": "rahul@example.com" },
+    "serviceId": { "name": "Haircut & Styling", "duration": 45, "price": 500 },
+    "businessId": { "name": "Luxe Salon & Spa" }
+  },
+  "message": "R5: Token status updated to 'called' successfully"
+}
+```
+- **Error Responses:**
+  - `400 Bad Request`: Missing status, unrecognised status value, or illegal R5 transition (message includes `R5:`).
+  - `401 Unauthorized`: Missing or invalid token.
+  - `403 Forbidden`: Customer trying to update another person's token, or customer trying a non-cancel transition; staff/admin from a different business (Rule R6).
+  - `404 Not Found`: Token not found.
 
-## M9 — Queue Dashboard _(TBD)_
+---
+
+### 2. Get Queue Dashboard
+`GET /api/v1/queue/dashboard?businessId=...&date=YYYY-MM-DD`
+- **Auth required:** Yes (`Bearer <token>`, role: `staff` or `admin`)
+- **Query Parameters:**
+  - `businessId` (required): The business whose queue to fetch.
+  - `date` (optional): `YYYY-MM-DD` date to view. Defaults to today.
+- **Response 200 (OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "queueDate": "2026-11-18",
+    "summary": {
+      "waiting": 3,
+      "called": 1,
+      "in-service": 1,
+      "completed": 5,
+      "cancelled": 2,
+      "no-show": 1,
+      "total": 13
+    },
+    "tokens": [
+      {
+        "_id": "673901...",
+        "tokenNumber": 1,
+        "guestName": "Alice",
+        "guestPhone": "9876543210",
+        "status": "completed",
+        "calledAt": "2026-11-18T09:10:00.000Z",
+        "servedAt": "2026-11-18T09:12:00.000Z",
+        "completedAt": "2026-11-18T09:50:00.000Z",
+        "servedBy": { "_id": "...", "name": "Rahul Sharma", "email": "rahul@example.com" },
+        "serviceId": { "name": "Haircut & Styling", "duration": 45, "price": 500 }
+      }
+    ]
+  },
+  "message": "Queue dashboard fetched successfully"
+}
+```
+- **Error Responses:**
+  - `400 Bad Request`: Missing `businessId`.
+  - `401 Unauthorized`: Missing or invalid token.
+  - `403 Forbidden`: Staff/admin from a different business.
+
+---
+
 ## M10 — Queue Position & Wait _(TBD)_
 ## M11 — Business Dashboard _(TBD)_
 ## M12 — Email Notifications _(TBD)_
