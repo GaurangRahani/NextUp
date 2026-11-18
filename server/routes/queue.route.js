@@ -6,6 +6,7 @@ const {
   getTodayQueue,
   updateTokenStatus,
   getQueueDashboard,
+  getQueuePosition,
 } = require('../controllers/queue.controller');
 const authenticate = require('../middleware/auth');
 const { optionalAuth } = require('../middleware/auth');
@@ -18,5 +19,8 @@ router.get('/today', getTodayQueue);
 // M9: Queue Dashboard & Status Management (Rule R5)
 router.patch('/tokens/:id/status', authenticate, updateTokenStatus);
 router.get('/dashboard', authenticate, getQueueDashboard);
+
+// M10: Queue Position & Wait Time Estimation (Decision D6, Rule R8)
+router.get('/position/:tokenId', optionalAuth, getQueuePosition);
 
 module.exports = router;
