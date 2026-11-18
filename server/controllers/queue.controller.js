@@ -3,6 +3,7 @@ const DailyCounter = require('../models/DailyCounter');
 const Business = require('../models/Business');
 const Service = require('../models/Service');
 const User = require('../models/User');
+const StaffProfile = require('../models/StaffProfile');
 const ApiError = require('../utils/ApiError');
 const sendResponse = require('../utils/sendResponse');
 const { getDayOfWeek } = require('../utils/hoursValidator');
@@ -294,10 +295,107 @@ const getQueueDashboard = async (req, res, next) => {
   );
 };
 
+/**
+ * Calculate queue position and estimated wait time for a token (Decision D6, Rule R8)
+ * GET /api/v1/queue/position/:tokenId
+ * Public (optionalAuth) — customers can check their own token
+ */
+const getQueuePosition = async (req, res, next) => {
+  const token = await QueueToken.findById(req.params.tokenId).populate(
+    'serviceId',
+    'duration'
+  );
+
+  if (!token) {
+    return next(new ApiError(404, 'Token not found'));
+  }
+
+  // Only meaningful for active (non-terminal) tokens
+  const terminalStatuses = ['completed', 'cancelled', 'no-show'];
+  if (terminalStatuses.includes(token.status)) {
+    return sendResponse(
+      res,
+      200,
+      {
+        tokenId: token._id,
+        tokenNumber: token.tokenNumber,
+        status: token.status,
+        position: 0,
+        estimatedWaitMinutes: 0,
+        tokensAhead: 0,
+      },
+      `Token is in terminal status: ${token.status}`
+    );
+  }
+
+  // Tokens ahead: same business, same queueDate, lower token number, still active
+  const tokensAheadList = await QueueToken.find({
+    businessId: token.businessId,
+    queueDate: token.queueDate,
+    tokenNumber: { $lt: token.tokenNumber },
+    status: { $in: ['waiting', 'in-service', 'called'] },
+  }).populate('serviceId', 'duration');
+
+  // Active staff count at this business (D6 formula denominator)
+  const activeStaffCount = await StaffProfile.countDocuments({
+    businessId: token.businessId,
+    isActive: true,
+  });
+  const safeStaffCount = Math.max(1, activeStaffCount);
+
+  // Average service duration of tokens ahead (default to current token's service duration)
+  const tokenDurations = tokensAheadList.map(
+    (t) => (t.serviceId && t.serviceId.duration) || (token.serviceId && token.serviceId.duration) || 15
+  );
+  const avgDuration =
+    tokenDurations.length > 0
+      ? tokenDurations.reduce((sum, d) => sum + d, 0) / tokenDurations.length
+      : 0;
+
+  // Adjust for in-service token: subtract already elapsed time from its share
+  let adjustedCount = tokensAheadList.length;
+  if (avgDuration > 0) {
+    const inServiceTokens = tokensAheadList.filter((t) => t.status === 'in-service');
+    if (inServiceTokens.length > 0 && inServiceTokens[0].servedAt) {
+      const elapsedMinutes =
+        (Date.now() - new Date(inServiceTokens[0].servedAt).getTime()) / 60000;
+      const remaining = Math.max(0, avgDuration - elapsedMinutes);
+      // Replace in-service tokens' full duration share with remaining fraction
+      adjustedCount =
+        tokensAheadList.length - inServiceTokens.length + remaining / avgDuration;
+    }
+  }
+
+  // D6: waitMinutes = (adjustedTokensAhead × avgDuration) / activeStaffCount
+  const estimatedWaitMinutes =
+    avgDuration > 0 ? Math.ceil((adjustedCount * avgDuration) / safeStaffCount) : 0;
+
+  // Position = number of waiting tokens ahead + 1 (this token)
+  const waitingAhead = tokensAheadList.filter((t) => t.status === 'waiting').length;
+  const position = waitingAhead + 1;
+
+  return sendResponse(
+    res,
+    200,
+    {
+      tokenId: token._id,
+      tokenNumber: token.tokenNumber,
+      status: token.status,
+      position,
+      tokensAhead: tokensAheadList.length,
+      estimatedWaitMinutes,
+      activeStaffCount: safeStaffCount,
+      avgServiceDurationMinutes: Math.round(avgDuration),
+    },
+    'Queue position and wait time calculated (Rule R8 / Decision D6)'
+  );
+};
+
 module.exports = {
   generateToken,
   getTokenById,
   getTodayQueue,
   updateTokenStatus,
   getQueueDashboard,
+  getQueuePosition,
 };
