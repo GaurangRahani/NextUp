@@ -24,3 +24,12 @@ export const updateBusiness = async (id, data) => {
   const res = await axiosInstance.put(`/business/${id}`, data);
   return res.data;
 };
+
+// M11: Business Dashboard (admin only)
+export const getBusinessDashboard = async (date) => {
+  const params = {};
+  if (date) params.date = date;
+  const res = await axiosInstance.get('/business/dashboard/summary', { params });
+  return res.data;
+};
+

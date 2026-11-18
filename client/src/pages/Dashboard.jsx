@@ -2,7 +2,6 @@ import { Link } from 'react-router-dom';
 import PageWrapper from '../components/layout/PageWrapper';
 import Button from '../components/ui/Button';
 import useAuth from '../hooks/useAuth';
-
 const Dashboard = () => {
   const { user } = useAuth();
   return (
@@ -86,6 +85,19 @@ const Dashboard = () => {
               <h3 className="font-bold text-gray-900 mt-2">Staff & Team</h3>
               <p className="text-xs text-gray-500 mt-1">
                 Manage specialists, qualifications, and service assignments.
+              </p>
+            </Link>
+          )}
+
+          {user?.role === 'admin' && (
+            <Link
+              to="/business-dashboard"
+              className="bg-white p-5 rounded-xl border border-gray-200 hover:border-primary-500 hover:shadow-sm transition-all"
+            >
+              <span className="text-2xl">📊</span>
+              <h3 className="font-bold text-gray-900 mt-2">Business Dashboard</h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Appointments, queue stats, revenue & top services at a glance.
               </p>
             </Link>
           )}
