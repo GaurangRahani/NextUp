@@ -34,6 +34,12 @@ export const queueApi = {
     const res = await api.get('/queue/dashboard', { params });
     return res.data;
   },
+
+  // M10: Get queue position and estimated wait time for a token (Decision D6, Rule R8)
+  getQueuePosition: async (tokenId) => {
+    const res = await api.get(`/queue/position/${tokenId}`);
+    return res.data;
+  },
 };
 
 export default queueApi;
