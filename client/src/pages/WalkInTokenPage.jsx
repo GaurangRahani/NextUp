@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import PageWrapper from '../components/layout/PageWrapper';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
@@ -26,6 +26,11 @@ const WalkInTokenPage = () => {
 
   // Issued token state
   const [issuedToken, setIssuedToken] = useState(null);
+
+  // M10: Live queue position & wait estimate for issued token (Rule R8)
+  const [queuePosition, setQueuePosition] = useState(null);
+  const [positionLoading, setPositionLoading] = useState(false);
+  const positionIntervalRef = useRef(null);
 
   // Live queue list for today
   const [todayTokens, setTodayTokens] = useState([]);
@@ -146,11 +151,51 @@ const WalkInTokenPage = () => {
 
   const handleReset = () => {
     setIssuedToken(null);
+    setQueuePosition(null);
+    // Stop position polling when resetting
+    if (positionIntervalRef.current) {
+      clearInterval(positionIntervalRef.current);
+      positionIntervalRef.current = null;
+    }
     if (!user) {
       setGuestName('');
       setGuestPhone('');
     }
   };
+
+  // M10: Fetch live position for the issued token
+  const fetchQueuePosition = useCallback(async (tokenId) => {
+    if (!tokenId) return;
+    try {
+      setPositionLoading(true);
+      const res = await queueApi.getQueuePosition(tokenId);
+      if (res.success && res.data) {
+        setQueuePosition(res.data);
+      }
+    } catch {
+      // Non-critical — keep showing last known position
+    } finally {
+      setPositionLoading(false);
+    }
+  }, []);
+
+  // Start/stop polling when a token is issued
+  useEffect(() => {
+    if (issuedToken?._id) {
+      // Fetch immediately
+      fetchQueuePosition(issuedToken._id);
+      // Then poll every 15 seconds (R8: recalculate after each queue change)
+      positionIntervalRef.current = setInterval(() => {
+        fetchQueuePosition(issuedToken._id);
+      }, 15000);
+    }
+    return () => {
+      if (positionIntervalRef.current) {
+        clearInterval(positionIntervalRef.current);
+        positionIntervalRef.current = null;
+      }
+    };
+  }, [issuedToken, fetchQueuePosition]);
 
   const selectedServiceObj = services.find((s) => s._id === selectedServiceId);
 
@@ -253,6 +298,50 @@ const WalkInTokenPage = () => {
                     }).format(new Date(issuedToken.createdAt || Date.now()))}
                   </p>
                 </div>
+              </div>
+
+              {/* M10: Live Queue Position & Wait Estimate (Rule R8 / Decision D6) */}
+              <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold text-indigo-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse inline-block"></span>
+                    Live Queue Tracker · Rule R8
+                  </span>
+                  {positionLoading && (
+                    <span className="text-xs text-indigo-500 animate-pulse">Updating…</span>
+                  )}
+                </div>
+                {queuePosition ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="text-center bg-white rounded-lg p-3 shadow-sm border border-indigo-100">
+                      <p className="text-3xl font-black text-indigo-700">
+                        {queuePosition.status === 'in-service'
+                          ? '🔄'
+                          : queuePosition.position === 0
+                          ? '✓'
+                          : `#${queuePosition.position}`}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1 font-medium">Your Position</p>
+                    </div>
+                    <div className="text-center bg-white rounded-lg p-3 shadow-sm border border-indigo-100">
+                      <p className="text-3xl font-black text-blue-700">
+                        {queuePosition.estimatedWaitMinutes === 0
+                          ? '~0'
+                          : `~${queuePosition.estimatedWaitMinutes}`}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1 font-medium">Est. Wait (min)</p>
+                    </div>
+                    <div className="col-span-2 text-center text-xs text-indigo-700 mt-1">
+                      {queuePosition.tokensAhead === 0
+                        ? "🎉 You're next! Please approach the counter."
+                        : `${queuePosition.tokensAhead} token${queuePosition.tokensAhead !== 1 ? 's' : ''} ahead · ${queuePosition.activeStaffCount} staff active`}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center text-indigo-400 text-sm py-2 animate-pulse">
+                    Loading your position…
+                  </div>
+                )}
               </div>
 
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-xs text-blue-900 leading-relaxed">
