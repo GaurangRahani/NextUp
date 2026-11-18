@@ -16,6 +16,7 @@ import StaffPage from '../pages/StaffPage';
 import BookAppointmentPage from '../pages/BookAppointmentPage';
 import AppointmentsPage from '../pages/AppointmentsPage';
 import WalkInTokenPage from '../pages/WalkInTokenPage';
+import QueueDashboardPage from '../pages/QueueDashboardPage';
 import NotFound from '../pages/NotFound';
 import Forbidden from '../pages/Forbidden';
 
@@ -80,6 +81,14 @@ const AppRouter = () => (
             />
             <Route path="/walk-in" element={<WalkInTokenPage />} />
             <Route path="/kiosk" element={<WalkInTokenPage />} />
+            <Route
+              path="/queue"
+              element={
+                <ProtectedRoute allowedRoles={['admin', 'staff']}>
+                  <QueueDashboardPage />
+                </ProtectedRoute>
+              }
+            />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </div>

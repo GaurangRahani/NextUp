@@ -64,6 +64,19 @@ const Dashboard = () => {
             </p>
           </Link>
 
+          {(user?.role === 'admin' || user?.role === 'staff') && (
+            <Link
+              to="/queue"
+              className="bg-white p-5 rounded-xl border border-gray-200 hover:border-primary-500 hover:shadow-sm transition-all"
+            >
+              <span className="text-2xl">📋</span>
+              <h3 className="font-bold text-gray-900 mt-2">Queue Dashboard</h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Call, start, complete or no-show walk-in tokens (Rule R5).
+              </p>
+            </Link>
+          )}
+
           {user?.role === 'admin' && (
             <Link
               to="/staff"
