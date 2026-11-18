@@ -54,6 +54,16 @@ All email logic is behind a single `server/utils/emailService.js` module.
 When `EMAIL_ENABLED=false` in `.env`, all emails are logged to the console instead (local dev default).  
 A failed email **never** throws or rolls back a booking (R7).
 
+**Implementation notes for M12:**
+- Install: `npm install resend` (in `/server`)
+- New env vars: `EMAIL_ENABLED`, `RESEND_API_KEY`, `EMAIL_FROM`
+- Call **fire-and-forget** (no `await`) from these controllers, just before `sendResponse`:
+  - `appointment.controller.js → createAppointment` → `sendAppointmentConfirmation`
+  - `appointment.controller.js → cancelAppointment` → `sendCancellationNotice`
+  - `appointment.controller.js → rescheduleAppointment` → `sendRescheduleNotice`
+- Wrap every Resend call in `try/catch`; log to `console.error` and return — never re-throw (R7).
+- Full API spec in `API-CONTRACT.md → M12`.
+
 ## D9 — Service Deactivation vs Deletion
 **Decision:** Services are **soft-deleted** (`isActive: false`). Hard deletion is never allowed.  
 - A service with future appointments cannot be deactivated until those are resolved (R3).
