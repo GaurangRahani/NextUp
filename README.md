@@ -54,7 +54,7 @@ npm run seed              # Seeds 1 business, 5 services, 3 staff, 1 customer
 
 ## Modules & Progress
 
-| Module | Title | Status | Rules Tested |
+| Module | Title | Status | Rules / Notes |
 |---|---|---|---|
 | **M0** | Setup & Foundation | ✅ Done | Express, Atlas, Vite, Tailwind v4, Shell |
 | **M1** | Authentication & Role-Based Authorization | ✅ Done | **R6** (Role Matrix & Ownership) |
@@ -64,29 +64,52 @@ npm run seed              # Seeds 1 business, 5 services, 3 staff, 1 customer
 | **M5** | Appointment Booking | ✅ Done | **R2** (Hours, staff assignment, no past dates) |
 | **M6** | Availability & Conflict Prevention | ✅ Done | **R1** (No overlapping bookings, back-to-back allowed) |
 | **M7** | Appointment Management | ✅ Done | Reschedule, Cancel, Status Lifecycle |
-| **M8** | Walk-in Token Generation | ✅ Done | **R4** (Atomic daily token) |
-| **M9** | Queue Dashboard & Status | ⏳ Pending | **R5** (Queue transitions) |
-| **M10** | Queue Position & Wait Time | ⏳ Pending | **R8** (Dynamic wait calculation) |
-| **M11** | Business Dashboard | ⏳ Pending | Aggregation metrics |
-| **M12** | Email Notifications | ⏳ Pending | **R7** (Non-blocking notifications) |
-| **M13** | Integration, Deployment & Demo | ⏳ Pending | End-to-end demo flow |
+| **M8** | Walk-in Token Generation | ✅ Done | **R4** (Atomic daily token counter) |
+| **M9** | Queue Dashboard & Status Management | ✅ Done | **R5** (State machine) + **R6** (access control) |
+| **M10** | Queue Position & Wait Time Estimation | ✅ Done | **R8** (D6 formula, 15s live polling) |
+| **M11** | Business Dashboard | ✅ Done | Mongo aggregation — appointments + queue + revenue |
+| **M12** | Email Notifications | ⏳ Pending | **R7** (Non-blocking, Resend — see D8 in DESIGN-NOTES) |
+| **M13** | Integration, Deployment & Demo | ⏳ Pending | End-to-end, Postman, Render + Vercel deploy |
+
+## Test Coverage
+
+```
+Backend (Jest + Supertest): 174 tests across 12 suites — all passing ✅
+Frontend (Vitest + RTL):     26 tests across 3 suites — all passing ✅
+```
 
 ## Running Tests
 ```bash
-# Backend
+# Backend (from /server)
 cd server && npm test
 
-# Frontend
+# Frontend (from /client)
 cd client && npm test
 ```
 
 ## Project Structure
 ```
 NextUp/
-├── client/          React frontend
-├── server/          Node/Express backend
-├── DESIGN-NOTES.md  Architecture decisions (D1–D9)
-├── API-CONTRACT.md  Endpoint reference
+├── client/                     React frontend (Vite + Tailwind)
+│   └── src/
+│       ├── api/                Axios API modules (one per domain)
+│       ├── components/         Shared UI + layout components
+│       ├── context/            AuthContext (React Context API)
+│       ├── hooks/              useAuth, useToast
+│       ├── pages/              One page component per route
+│       │   └── __tests__/      Vitest + RTL tests
+│       └── routes/             AppRouter + ProtectedRoute
+├── server/                     Node/Express backend
+│   ├── controllers/            Business logic handlers
+│   ├── middleware/             auth, authorize, ownership, error
+│   ├── models/                 Mongoose schemas
+│   ├── routes/                 Express routers
+│   ├── utils/                  ApiError, sendResponse, jwt, emailService
+│   └── __tests__/              Jest + Supertest integration tests
+├── API-CONTRACT.md             Full endpoint reference (M0–M11 documented)
+├── DESIGN-NOTES.md             Architecture decisions (D1–D9)
+├── ER-DIAGRAM.md               Entity relationships & status transitions
+├── M12-M13-HANDOFF.md          ← Handoff guide for next developer
 └── README.md
 ```
 
@@ -96,8 +119,9 @@ NextUp/
 - `feat/m*` — one branch per module
 
 ## Live URLs
-- Frontend: _TBD (Vercel/Netlify after M0 deploy)_
-- Backend:  _TBD (Render/Railway after M0 deploy)_
+- Frontend: _TBD (Vercel/Netlify after M13 deploy)_
+- Backend:  _TBD (Render/Railway after M13 deploy)_
 
 ## Team
 MSC IT — Sem 3 Web & Mobile Dev Project
+
