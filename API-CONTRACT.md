@@ -1151,6 +1151,144 @@ Integrated into `POST /api/v1/appointments`:
 
 ---
 
-## M10 — Queue Position & Wait _(TBD)_
-## M11 — Business Dashboard _(TBD)_
+## M10 — Queue Position & Wait Time Estimation (Decision D6, Rule R8)
+
+### Business Rule Reference
+- **Decision D6**: `waitMinutes = (tokensAhead × avgServiceDuration) / activeStaffCount`
+- **Rule R8**: Position and wait recalculate after every queue state change (status update, cancellation, etc.)
+- `tokensAhead` = tokens with lower tokenNumber and status in `['waiting', 'in-service', 'called']`
+- `avgServiceDuration` = average `service.duration` of tokens ahead (defaults to subject token's duration)
+- `activeStaffCount` = `StaffProfile.countDocuments({ businessId, isActive: true })` (floor of 1)
+- In-service token's elapsed time is subtracted from its share of the wait estimate
+
+---
+
+### GET `/api/v1/queue/position/:tokenId`
+
+Get the queue position and estimated wait time for a specific token.
+
+**Auth:** Optional (`optionalAuth`) — anyone with the token ID can check status
+
+**Path Params:**
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `tokenId` | string (ObjectId) | ✅ | The token's MongoDB `_id` |
+
+**Success Response `200`:**
+```json
+{
+  "success": true,
+  "data": {
+    "tokenId": "60d0fe4f5311236168a109ee",
+    "tokenNumber": 5,
+    "status": "waiting",
+    "position": 3,
+    "tokensAhead": 2,
+    "estimatedWaitMinutes": 40,
+    "activeStaffCount": 1,
+    "avgServiceDurationMinutes": 20
+  },
+  "message": "Queue position and wait time calculated (Rule R8 / Decision D6)"
+}
+```
+
+**Terminal Token Response `200`** (status = `completed` | `cancelled` | `no-show`):
+```json
+{
+  "success": true,
+  "data": {
+    "tokenId": "...",
+    "tokenNumber": 3,
+    "status": "completed",
+    "position": 0,
+    "estimatedWaitMinutes": 0,
+    "tokensAhead": 0
+  },
+  "message": "Token is in terminal status: completed"
+}
+```
+
+**Error Responses:**
+| Status | Condition |
+|--------|-----------|
+| `404` | Token not found |
+
+**D6 Formula Examples:**
+| tokensAhead | avgDuration | activeStaff | estimatedWait |
+|-------------|-------------|-------------|---------------|
+| 0 | any | any | 0 min |
+| 2 | 20 min | 1 | 40 min |
+| 2 | 20 min | 2 | 20 min |
+| 1 | 20 min | 0 (→1) | 20 min |
+
+**Frontend Polling (Rule R8):**
+- `WalkInTokenPage` polls `GET /queue/position/:tokenId` every **15 seconds** after token issuance
+- Interval is cleared on component unmount or when user resets
+- Live position and wait displayed in the "Live Queue Tracker" widget
+
+## M11 — Business Dashboard
+
+Provides aggregated metrics for a business scoped to a specific date. Admin-only. Combines data from both the `Appointment` and `QueueToken` collections.
+
+### GET `/api/v1/business/dashboard/summary`
+
+**Auth:** Required — `authenticate` + `authorize('admin')`
+
+**Query Params:**
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `date` | string (`YYYY-MM-DD`) | ❌ | Defaults to today |
+
+**Success Response `200`:**
+```json
+{
+  "success": true,
+  "data": {
+    "date": "2026-11-18",
+    "businessId": "60d0fe4f5311236168a109aa",
+    "summary": {
+      "totalAppointments": 10,
+      "scheduledAppointments": 4,
+      "completedAppointments": 5,
+      "cancelledAppointments": 1,
+      "noShowAppointments": 0,
+      "totalQueueTokens": 8,
+      "activeQueueCount": 4,
+      "waitingInQueue": 2,
+      "inServiceCount": 1,
+      "completedQueueTokens": 3,
+      "estimatedRevenue": 2500
+    },
+    "appointments": {
+      "total": 10, "scheduled": 4, "completed": 5, "cancelled": 1, "noShow": 0
+    },
+    "queue": {
+      "total": 8, "waiting": 2, "called": 1, "inService": 1,
+      "completed": 3, "cancelled": 1, "noShow": 0
+    },
+    "topServices": [
+      { "serviceId": "...", "name": "Haircut", "count": 5 },
+      { "serviceId": "...", "name": "Colour", "count": 3 }
+    ]
+  },
+  "message": "Business dashboard data fetched successfully"
+}
+```
+
+**Empty Day (all zeros):** When no data exists for the date, all counts are `0`, `estimatedRevenue` is `0`, and `topServices` is `[]`.
+
+**Error Responses:**
+| Status | Condition |
+|--------|-----------|
+| `401` | No auth token |
+| `403` | Staff role (admin only) or admin has no `businessId` linked |
+| `400` | Invalid `date` format (not `YYYY-MM-DD`) |
+
+**Aggregation Logic:**
+- **Appointment stats**: MongoDB `$group` on `businessId + date range` (UTC midnight to 23:59:59)
+- **Queue stats**: MongoDB `$group` on `businessId + queueDate` string
+- **Revenue**: `$lookup` to Services, sum `price` of completed appointments
+- **Top Services**: `$group` by `serviceId`, `$lookup` name, `$sort` by count desc, `$limit 5`
+- **activeQueueCount** = `waiting + called + inService`
+
 ## M12 — Email Notifications _(TBD)_
