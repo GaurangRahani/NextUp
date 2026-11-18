@@ -1291,4 +1291,106 @@ Provides aggregated metrics for a business scoped to a specific date. Admin-only
 - **Top Services**: `$group` by `serviceId`, `$lookup` name, `$sort` by count desc, `$limit 5`
 - **activeQueueCount** = `waiting + called + inService`
 
-## M12 — Email Notifications _(TBD)_
+## M12 — Email Notifications (Rule R7)
+
+> **Status:** ⏳ Pending implementation  
+> **Rule R7:** A failed email must **never** throw, block, or roll back a booking. Log failures to `console.error` and return 2xx as normal.  
+> **Design D8:** All email logic lives in `server/utils/emailService.js` only. Provider: Resend (`npm install resend`). Console-fallback when `EMAIL_ENABLED=false`.
+
+### Email Triggers (no new HTTP endpoints — fires inside existing controllers)
+
+| Controller action | Email sent | Recipient |
+|-------------------|-----------|-----------|
+| `createAppointment` | Appointment confirmation | Customer (`customerId.email`) |
+| `cancelAppointment` | Cancellation notice | Customer |
+| `rescheduleAppointment` | Reschedule notice | Customer |
+
+### New `.env` variables required
+
+```env
+EMAIL_ENABLED=false          # set true in production
+RESEND_API_KEY=re_xxxx       # from resend.com dashboard
+EMAIL_FROM=noreply@nextup.app
+```
+
+### `server/utils/emailService.js` — exports
+
+```js
+sendAppointmentConfirmation({ to, name, service, date, startTime, staffName })
+sendCancellationNotice({ to, name, service, date, startTime })
+sendRescheduleNotice({ to, name, service, newDate, newStartTime })
+```
+
+Each function:
+- Returns `Promise<void>`
+- Catches all errors internally, never re-throws (R7)
+- When `EMAIL_ENABLED=false`: logs to `console.log('[EMAIL:DEV] ...')` instead of calling Resend
+
+### Integration pattern in controllers
+
+```js
+// Fire-and-forget BEFORE sendResponse — no await (R7)
+sendAppointmentConfirmation({
+  to: customer.email,
+  name: customer.name,
+  service: populated.serviceId.name,
+  date: appointment.date.toISOString().split('T')[0],
+  startTime: appointment.startTime,
+  staffName: populated.staffId.name,
+}).catch(() => {}); // R7 safety net
+
+return sendResponse(res, 201, populated, 'Appointment booked successfully');
+```
+
+### Tests to write (`server/__tests__/email.test.js`)
+
+```
+1. Confirmation email called after successful POST /appointments
+2. Cancellation email called after PATCH /appointments/:id/cancel
+3. Reschedule email called after PATCH /appointments/:id/reschedule
+4. R7: Resend throws → HTTP response is still 201/200 (booking not rolled back)
+5. EMAIL_ENABLED=false → Resend NOT instantiated, console.log called
+6. Invalid email address → error caught silently, booking succeeds
+```
+
+### Frontend (no new page)
+
+Add a small toast in `BookAppointmentPage` after success:
+
+```js
+toast.success(`Appointment booked! 📧 Confirmation email sent to ${user.email}`);
+```
+
+---
+
+## M13 — Integration, Deployment & Demo _(TBD)_
+
+> **Status:** ⏳ Pending — start after M12 is complete  
+> **Parts:** A (Integration + Postman) · B (Deploy: Render backend + Vercel frontend) · C (Docs + Demo script)
+
+### Part A — Postman Collection
+
+Create `NextUp.postman_collection.json` at repo root with one **folder per module** (M0–M12).  
+Use collection variables: `{{baseUrl}}`, `{{adminToken}}`, `{{staffToken}}`, `{{customerToken}}`.
+
+### Part B — Backend (Render)
+
+1. Root dir: `server` | Build: `npm install` | Start: `npm start`
+2. Required env vars: `MONGO_URI`, `JWT_SECRET`, `NODE_ENV=production`, `EMAIL_ENABLED=true`, `RESEND_API_KEY`, `EMAIL_FROM`, `CLIENT_ORIGIN`
+3. Update CORS in `server/app.js`: `origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173'`
+
+### Part B — Frontend (Vercel)
+
+1. Root dir: `client` | Framework: Vite | Build: `npm run build` | Output: `dist`
+2. Env var: `VITE_API_URL=https://<your-render-service>.onrender.com/api/v1`
+3. Confirm `client/src/api/axiosInstance.js` uses `import.meta.env.VITE_API_URL`
+
+### Part C — Smoke Test Checklist
+
+- [ ] `GET /api/v1/health` → `200 OK`
+- [ ] Admin: register → create business → add services → add staff
+- [ ] Customer: book appointment → receive confirmation email
+- [ ] Staff: call token → update status → customer sees live position update
+- [ ] Admin: open Business Dashboard → see live counts
+- [ ] Customer: cancel → receive cancellation email
+
